@@ -1,0 +1,116 @@
+:root {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  color: #172017;
+  background: #f5f1e8;
+  touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+html,
+body {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+body {
+  margin: 0;
+  overscroll-behavior-y: contain;
+}
+
+.app {
+  min-height: 100svh;
+  padding: calc(env(safe-area-inset-top) + 8px) 12px calc(env(safe-area-inset-bottom) + 12px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.toolbar,
+.palette,
+.actions {
+  width: min(100%, 390px);
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+button,
+.file-label {
+  min-height: 44px;
+  border: 0;
+  border-radius: 12px;
+  background: #2e5f44;
+  color: white;
+  font-weight: 700;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+}
+
+button.active {
+  background: #1237a8;
+}
+
+.palette button {
+  background: #5b634f;
+}
+
+.palette button.active {
+  outline: 3px solid #f2c94c;
+}
+
+.canvas-wrap {
+  width: min(100%, 390px);
+  display: flex;
+  justify-content: center;
+  position: relative;
+}
+
+canvas {
+  width: 360px;
+  max-width: 100%;
+  height: auto;
+  border: 3px solid #263426;
+  border-radius: 10px;
+  background: #dcecc8;
+  touch-action: pan-y;
+}
+
+.status,
+.json,
+.json-import {
+  width: min(100%, 390px);
+}
+
+.status {
+  background: #fff;
+  border-radius: 12px;
+  padding: 10px;
+  line-height: 1.5;
+}
+
+.json {
+  height: 96px;
+  font-size: 12px;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.hidden {
+  display: none;
+}
+
+.file-label input {
+  display: none;
+}
