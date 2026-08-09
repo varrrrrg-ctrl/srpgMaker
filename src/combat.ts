@@ -19,27 +19,29 @@ export const calculateBaseDamage = (attack: number, defense: number): number => 
   const safeDefense = defense > 0 ? defense : 1;
   return 0.5 * safeAttack * Math.sqrt(safeAttack / safeDefense);
 };
-export const calculateAttackDamage = (attacker: Unit, defender: Unit): AttackDamage => {
+export const calculateAttackDamage = (attacker: Unit, defender: Unit, skillMultiplier = 1): AttackDamage => {
   const modifier = directionalAttackModifier(attacker, defender);
   const baseDamage = calculateBaseDamage(attacker.attack, defender.defense);
-  return { ...modifier, damage: Math.max(1, Math.round(baseDamage * modifier.multiplier)) };
+  const guardMultiplier = defender.guarding ? 0.6 : 1;
+  return { ...modifier, damage: Math.max(1, Math.round(baseDamage * skillMultiplier * modifier.multiplier * guardMultiplier)) };
 };
 export const adjacentEnemies = (units: Unit[], unit: Unit): Unit[] => units.filter((u) => u.side !== unit.side && neighbors(unit).some((p) => p.x === u.x && p.y === u.y));
 export const attackableTargets = (units: Unit[], unit: Unit): Unit[] => {
   const target = positionInDirection(unit, unit.direction);
   return units.filter((u) => u.side !== unit.side && u.x === target.x && u.y === target.y);
 };
-export const attackUnit = (state: PlayState, attackerId: string, targetId: string): void => {
+export const attackUnit = (state: PlayState, attackerId: string, targetId: string, skillMultiplier = 1): AttackDamage | null => {
   const attacker = state.stage.units.find((u) => u.id === attackerId);
   const target = state.stage.units.find((u) => u.id === targetId);
-  if (!attacker || !target || !attackableTargets(state.stage.units, attacker).some((u) => u.id === targetId) || attacker.acted) return;
-  const attack = calculateAttackDamage(attacker, target);
+  if (!attacker || !target || !attackableTargets(state.stage.units, attacker).some((u) => u.id === targetId) || attacker.acted) return null;
+  const attack = calculateAttackDamage(attacker, target, skillMultiplier);
   target.hp -= attack.damage;
   const labels: Record<AttackDirection, string> = { front: '正面', side: '側面', back: '背後' };
   state.message = `${labels[attack.direction]}攻撃！ ${attack.damage}ダメージ。`;
   state.stage.units = state.stage.units.filter((u) => u.hp > 0);
   attacker.acted = true;
   updateResult(state);
+  return attack;
 };
 export const updateResult = (state: PlayState): void => {
   const hasAlly = state.stage.units.some((u) => u.side === 'ally');

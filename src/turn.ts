@@ -33,7 +33,13 @@ const prepareCurrentUnit = (state: PlayState): Unit | undefined => {
 
 export const startRound = (state: PlayState, round = state.round): Unit | undefined => {
   state.round = round;
-  state.stage.units.forEach((unit) => { unit.acted = false; });
+  state.stage.units.forEach((unit) => {
+    unit.acted = false;
+    if (round > 1 && unit.side === 'ally' && unit.hp > 0) {
+      unit.currentMp = Math.min(unit.currentMp + 10, unit.maxMp);
+      unit.guarding = false;
+    }
+  });
   state.actionOrder = buildActionOrder(state.stage.units);
   state.currentActionIndex = 0;
   return prepareCurrentUnit(state);
