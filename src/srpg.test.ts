@@ -1,10 +1,36 @@
 import { describe, expect, it } from 'vitest';
-import { attackableTargets, attackUnit, updateResult } from './combat';
-import { changeDirection, movementMap, movementStep, reachablePositions, shortestPath } from './movement';
+import { chooseEnemyAction, runEnemyAction } from './ai';
+import { applyDirectionalModifier, attackableTargets, attackUnit, directionalAttackModifier, updateResult } from './combat';
+import { AutoMover, autoMovePath, changeDirection, directionFromFlick, movementMap, movementStep, pathCost, reachablePositions, shortestPath } from './movement';
 import { parseStage, stageToJson } from './storage';
+import { buildActionOrder, currentUnit, finishCurrentAction, startRound } from './turn';
 import { createStage, defaultUnit, indexOf, type PlayState } from './types';
 
-const play = (): PlayState => ({ stage: createStage(), turn: 'ally', selectedUnitId: null, phase: 'select', origin: null, result: 'playing', message: '' });
+const play = (): PlayState => ({ stage: createStage(), turn: 'ally', round: 1, actionOrder: [], currentActionIndex: 0, selectedUnitId: null, phase: 'select', origin: null, result: 'playing', message: '' });
+
+describe('speed round order', () => {
+  it('敵味方を区別せずspeed降順、同値は固定id順になる', () => {
+    const slow = defaultUnit('ally', 0, 0); slow.id = 'b'; slow.speed = 8;
+    const fastB = defaultUnit('enemy', 1, 0); fastB.id = 'z'; fastB.speed = 15;
+    const fastA = defaultUnit('ally', 2, 0); fastA.id = 'a'; fastA.speed = 15;
+    expect(buildActionOrder([slow, fastB, fastA])).toEqual(['a', 'z', 'b']);
+  });
+  it('各ユニットは1回だけ行動し、全員終了後に次ラウンドでリセットされる', () => {
+    const state = play(); const a = defaultUnit('ally', 0, 0); const b = defaultUnit('enemy', 2, 0); a.id = 'a'; b.id = 'b'; state.stage.units.push(a, b);
+    startRound(state); expect(currentUnit(state)?.id).toBe('a');
+    finishCurrentAction(state); expect(a.acted).toBe(true); expect(currentUnit(state)?.id).toBe('b');
+    finishCurrentAction(state); expect(state.round).toBe(2); expect(a.acted).toBe(false); expect(b.acted).toBe(false); expect(currentUnit(state)?.id).toBe('a');
+  });
+  it('撃破された未行動ユニットを飛ばす', () => {
+    const state = play(); const a = defaultUnit('ally', 0, 0); const dead = defaultUnit('enemy', 2, 0); a.id = 'a'; dead.id = 'b'; state.stage.units.push(a, dead); startRound(state);
+    state.stage.units = state.stage.units.filter((unit) => unit.id !== dead.id);
+    finishCurrentAction(state); expect(state.round).toBe(2); expect(currentUnit(state)?.id).toBe('a');
+  });
+  it('ラウンド途中のspeed変更は次ラウンドから反映される', () => {
+    const state = play(); const a = defaultUnit('ally', 0, 0); const b = defaultUnit('enemy', 2, 0); a.id = 'a'; b.id = 'b'; a.speed = 20; b.speed = 10; state.stage.units.push(a, b); startRound(state);
+    b.speed = 30; expect(state.actionOrder).toEqual(['a', 'b']); finishCurrentAction(state); finishCurrentAction(state); expect(state.actionOrder).toEqual(['b', 'a']);
+  });
+});
 
 describe('movement', () => {
   it('壁を越えて移動範囲が広がらない', () => {
@@ -58,22 +84,74 @@ describe('movement', () => {
     expect(reach).toContainEqual({ x: 2, y: 0 });
     expect(movementStep(stage, unit, reach, { x: 2, y: 0 })).toBe(true);
   });
+  it('ジャンプはコスト2なので移動力1では到達できない', () => {
+    const stage = createStage(); const unit = defaultUnit('ally', 0, 0); unit.move = 1; stage.units.push(unit); stage.terrain[indexOf({ x: 1, y: 0 })] = 'jump';
+    expect(reachablePositions(stage, unit)).not.toContainEqual({ x: 2, y: 0 });
+  });
   it('ユニットを飛び越え、着地点が塞がれていれば飛べない', () => {
     const stage = createStage(); const unit = defaultUnit('ally', 0, 0); unit.move = 2; stage.units.push(unit, defaultUnit('enemy', 1, 0));
     expect(reachablePositions(stage, unit)).toContainEqual({ x: 2, y: 0 });
     stage.units.push(defaultUnit('ally', 2, 0));
     expect(reachablePositions(stage, unit)).not.toContainEqual({ x: 2, y: 0 });
   });
+  it('20px以上のフリックは大きい軸の方向になり、位置や行動状態を変えない', () => {
+    const unit = defaultUnit('ally', 3, 3); const before = { x: unit.x, y: unit.y, acted: unit.acted };
+    expect(directionFromFlick(25, 10)).toBe('right'); expect(directionFromFlick(-25, 3)).toBe('left'); expect(directionFromFlick(2, -21)).toBe('up'); expect(directionFromFlick(8, 22)).toBe('down'); expect(directionFromFlick(19, 0)).toBeNull();
+    changeDirection(unit, directionFromFlick(25, 0)!); expect({ x: unit.x, y: unit.y, acted: unit.acted }).toEqual(before);
+  });
+  it('範囲内の離れたマスへ決定的な最短経路で自動移動する', () => {
+    const stage = createStage(); const unit = defaultUnit('ally', 0, 0); unit.move = 4; stage.units.push(unit); const reachable = reachablePositions(stage, unit);
+    const path = autoMovePath(stage, unit, reachable, { x: 2, y: 1 }); expect(path).toEqual([{ x: 0, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 1 }, { x: 2, y: 1 }]);
+    const mover = new AutoMover(); expect(mover.start(path)).toBe(true); expect(mover.start(path)).toBe(false);
+    while (mover.active) mover.advance(unit); expect({ x: unit.x, y: unit.y }).toEqual({ x: 2, y: 1 }); expect(unit.direction).toBe('right');
+  });
+  it('自動移動は壁やユニットを通常通過せず、到達不能なら開始しない', () => {
+    const stage = createStage(); const unit = defaultUnit('ally', 0, 0); unit.move = 4; stage.units.push(unit, defaultUnit('ally', 1, 0)); stage.terrain[indexOf({ x: 0, y: 1 })] = 'wall';
+    const reachable = reachablePositions(stage, unit); expect(autoMovePath(stage, unit, reachable, { x: 1, y: 0 })).toEqual([]); expect(autoMovePath(stage, unit, reachable, { x: 0, y: 2 })).toEqual([]);
+  });
+  it('ジャンプを経路上の1アクションかつコスト2として自動移動する', () => {
+    const stage = createStage(); const unit = defaultUnit('ally', 0, 0); unit.move = 3; stage.units.push(unit); stage.terrain[indexOf({ x: 1, y: 0 })] = 'jump';
+    const path = autoMovePath(stage, unit, reachablePositions(stage, unit), { x: 3, y: 0 }); expect(path).toEqual([{ x: 0, y: 0 }, { x: 2, y: 0 }, { x: 3, y: 0 }]); expect(pathCost(path)).toBe(3);
+  });
+  it('自動移動後もターン開始時の固定範囲内へ再移動できる', () => {
+    const stage = createStage(); const unit = defaultUnit('ally', 2, 2); unit.move = 2; stage.units.push(unit); const reachable = reachablePositions(stage, unit); const mover = new AutoMover();
+    mover.start(autoMovePath(stage, unit, reachable, { x: 4, y: 2 })); while (mover.active) mover.advance(unit);
+    const returnPath = autoMovePath(stage, unit, reachable, { x: 0, y: 2 }); expect(returnPath.length).toBeGreaterThan(1); mover.start(returnPath); while (mover.active) mover.advance(unit); expect({ x: unit.x, y: unit.y }).toEqual({ x: 0, y: 2 });
+  });
+});
+
+describe('directional damage', () => {
+  const relative = (direction: 'up' | 'down' | 'left' | 'right', attackerPosition: { x: number; y: number }) => {
+    const defender = defaultUnit('enemy', 2, 2); defender.direction = direction; const attacker = defaultUnit('ally', attackerPosition.x, attackerPosition.y); return directionalAttackModifier(attacker, defender);
+  };
+  it('正面1.0倍、側面1.1倍、背後1.3倍をMath.roundする', () => {
+    const defender = defaultUnit('enemy', 2, 2); defender.direction = 'up';
+    expect(applyDirectionalModifier(10, defaultUnit('ally', 2, 1), defender)).toBe(10);
+    expect(applyDirectionalModifier(10, defaultUnit('ally', 1, 2), defender)).toBe(11);
+    expect(applyDirectionalModifier(10, defaultUnit('ally', 2, 3), defender)).toBe(13);
+    expect(applyDirectionalModifier(3, defaultUnit('ally', 1, 2), defender)).toBe(3);
+  });
+  it('up/down/left/rightの全方向を防御側基準で判定する', () => {
+    expect(relative('up', { x: 2, y: 1 }).direction).toBe('front'); expect(relative('up', { x: 2, y: 3 }).direction).toBe('back');
+    expect(relative('down', { x: 2, y: 3 }).direction).toBe('front'); expect(relative('down', { x: 2, y: 1 }).direction).toBe('back');
+    expect(relative('left', { x: 1, y: 2 }).direction).toBe('front'); expect(relative('left', { x: 3, y: 2 }).direction).toBe('back');
+    expect(relative('right', { x: 3, y: 2 }).direction).toBe('front'); expect(relative('right', { x: 1, y: 2 }).direction).toBe('back');
+    expect(relative('right', { x: 2, y: 1 }).direction).toBe('side');
+  });
+  it('敵AIの通常攻撃にも背後補正を適用する', () => {
+    const state = play(); const ally = defaultUnit('ally', 1, 1); ally.direction = 'up'; const enemy = defaultUnit('enemy', 1, 2); enemy.direction = 'up'; state.stage.units.push(ally, enemy);
+    runEnemyAction(state, enemy.id); expect(ally.hp).toBe(6); expect(state.message).toContain('背後攻撃');
+  });
 });
 
 describe('combat/result/storage', () => {
   it('攻撃でHPが減る', () => {
-    const state = play(); const a = defaultUnit('ally', 0, 0); a.direction = 'down'; const e = defaultUnit('enemy', 0, 1); state.stage.units.push(a, e);
+    const state = play(); const a = defaultUnit('ally', 0, 0); a.direction = 'down'; const e = defaultUnit('enemy', 0, 1); e.direction = 'up'; state.stage.units.push(a, e);
     attackUnit(state, a.id, e.id);
     expect(state.stage.units.find((u) => u.id === e.id)?.hp).toBe(7);
   });
   it('HPが0以下のユニットが除去される', () => {
-    const state = play(); const a = defaultUnit('ally', 0, 0); a.direction = 'down'; const e = defaultUnit('enemy', 0, 1); e.hp = 3; state.stage.units.push(a, e);
+    const state = play(); const a = defaultUnit('ally', 0, 0); a.direction = 'down'; const e = defaultUnit('enemy', 0, 1); e.direction = 'up'; e.hp = 3; state.stage.units.push(a, e);
     attackUnit(state, a.id, e.id);
     expect(state.stage.units.some((u) => u.id === e.id)).toBe(false);
   });
@@ -87,11 +165,22 @@ describe('combat/result/storage', () => {
     const stage = createStage(); stage.terrain[0] = 'wall'; stage.units.push(defaultUnit('enemy', 2, 3));
     expect(parseStage(stageToJson(stage))).toEqual(stage);
   });
+  it('旧保存データにspeedのデフォルト値を補う', () => {
+    const unit = defaultUnit('enemy', 2, 3); const oldUnit = { ...unit } as Partial<typeof unit>; delete oldUnit.speed;
+    const loaded = parseStage(JSON.stringify({ version: 1, terrain: createStage().terrain, units: [oldUnit] })); expect(loaded.units[0].speed).toBe(10);
+  });
   it('向いている方向の敵だけが攻撃対象になり、自動選択しない', () => {
     const state = play(); const a = defaultUnit('ally', 1, 1); const up = defaultUnit('enemy', 1, 0); const right = defaultUnit('enemy', 2, 1); state.stage.units.push(a, up, right);
     a.direction = 'up'; expect(attackableTargets(state.stage.units, a).map((u) => u.id)).toEqual([up.id]);
     attackUnit(state, a.id, right.id); expect(right.hp).toBe(right.maxHp); expect(a.acted).toBe(false);
     a.direction = 'right'; attackUnit(state, a.id, right.id); expect(a.acted).toBe(true);
     attackUnit(state, a.id, up.id); expect(up.hp).toBe(up.maxHp);
+  });
+  it('勝敗確定後は行動順を進めない', () => {
+    const state = play(); const ally = defaultUnit('ally', 0, 0); state.stage.units.push(ally); startRound(state); state.result = 'victory'; finishCurrentAction(state); expect(state.currentActionIndex).toBe(0);
+  });
+  it('敵AIもジャンプをコスト2として評価する', () => {
+    const state = play(); const enemy = defaultUnit('enemy', 0, 0); enemy.move = 1; const ally = defaultUnit('ally', 3, 0); state.stage.units.push(enemy, ally); state.stage.terrain[indexOf({ x: 1, y: 0 })] = 'jump';
+    expect(chooseEnemyAction(state, enemy).position).toEqual({ x: 0, y: 0 });
   });
 });

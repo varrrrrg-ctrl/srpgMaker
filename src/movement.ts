@@ -5,32 +5,36 @@ const occupied = (stage: StageData, p: Position, moverId?: string): boolean => s
 const canStop = (stage: StageData, p: Position, moverId?: string): boolean => inBounds(p) && stage.terrain[indexOf(p)] === 'floor' && !occupied(stage, p, moverId);
 const canJump = (stage: StageData, p: Position, moverId?: string): boolean => inBounds(p) && (stage.terrain[indexOf(p)] === 'jump' || occupied(stage, p, moverId));
 
-const travelEdges = (stage: StageData, current: Position, moverId?: string): Position[] => neighbors(current).flatMap((next) => {
-  if (canStop(stage, next, moverId)) return [next];
+interface TravelEdge { position: Position; cost: number }
+const travelEdges = (stage: StageData, current: Position, moverId?: string): TravelEdge[] => neighbors(current).flatMap((next) => {
+  if (canStop(stage, next, moverId)) return [{ position: next, cost: 1 }];
   if (!canJump(stage, next, moverId)) return [];
   const landing = { x: next.x + (next.x - current.x), y: next.y + (next.y - current.y) };
-  return canStop(stage, landing, moverId) ? [landing] : [];
+  return canStop(stage, landing, moverId) ? [{ position: landing, cost: 2 }] : [];
 });
 
-export const movementMap = (stage: StageData, unit: Unit): Map<string, Position | null> => {
+const searchMovement = (stage: StageData, unit: Unit, maxCost: number, allowed?: Set<string>): Map<string, Position | null> => {
   const start = { x: unit.x, y: unit.y };
   const came = new Map<string, Position | null>([[key(start), null]]);
   const cost = new Map<string, number>([[key(start), 0]]);
   const queue: Position[] = [start];
   while (queue.length > 0) {
+    queue.sort((a, b) => cost.get(key(a))! - cost.get(key(b))! || key(a).localeCompare(key(b)));
     const current = queue.shift()!;
     const currentCost = cost.get(key(current))!;
-    if (currentCost >= unit.move) continue;
-    for (const next of travelEdges(stage, current, unit.id)) {
-      const nextKey = key(next);
-      if (cost.has(nextKey)) continue;
-      cost.set(nextKey, currentCost + 1);
+    if (currentCost >= maxCost) continue;
+    for (const edge of travelEdges(stage, current, unit.id)) {
+      const nextKey = key(edge.position); const nextCost = currentCost + edge.cost;
+      if ((allowed && !allowed.has(nextKey)) || nextCost > maxCost || nextCost >= (cost.get(nextKey) ?? Infinity)) continue;
+      cost.set(nextKey, nextCost);
       came.set(nextKey, current);
-      queue.push(next);
+      queue.push(edge.position);
     }
   }
   return came;
 };
+
+export const movementMap = (stage: StageData, unit: Unit): Map<string, Position | null> => searchMovement(stage, unit, unit.move);
 
 export const directionBetween = (from: Position, to: Position): Direction | null => {
   const dx = to.x - from.x; const dy = to.y - from.y;
@@ -42,6 +46,11 @@ export const directionBetween = (from: Position, to: Position): Direction | null
 };
 
 export const changeDirection = (unit: Unit, direction: Direction): void => { unit.direction = direction; };
+
+export const directionFromFlick = (dx: number, dy: number, threshold = 20): Direction | null => {
+  if (Math.hypot(dx, dy) < threshold) return null;
+  return Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
+};
 
 export const movementStep = (stage: StageData, unit: Unit, reachable: Position[], destination: Position): boolean => {
   if (unit.acted || !reachable.some((p) => p.x === destination.x && p.y === destination.y) || !canStop(stage, destination, unit.id)) return false;
@@ -65,3 +74,37 @@ export const shortestPath = (stage: StageData, unit: Unit, goal: Position): Posi
   while (current) { path.unshift(current); current = came.get(key(current)) ?? null; }
   return path;
 };
+
+export const autoMovePath = (stage: StageData, unit: Unit, reachable: Position[], goal: Position): Position[] => {
+  const allowed = new Set(reachable.map(key));
+  if (unit.acted || !allowed.has(key(goal))) return [];
+  const came = searchMovement(stage, unit, Infinity, allowed);
+  if (!came.has(key(goal))) return [];
+  const path: Position[] = [];
+  let current: Position | null = goal;
+  while (current) { path.unshift(current); current = came.get(key(current)) ?? null; }
+  return path;
+};
+
+export const pathCost = (path: Position[]): number => path.slice(1).reduce((total, position, index) => {
+  const previous = path[index];
+  return total + Math.abs(position.x - previous.x) + Math.abs(position.y - previous.y);
+}, 0);
+
+export class AutoMover {
+  private path: Position[] = [];
+  get active(): boolean { return this.path.length > 0; }
+  start(path: Position[]): boolean {
+    if (this.active || path.length < 2) return false;
+    this.path = path.slice(1);
+    return true;
+  }
+  advance(unit: Unit): boolean {
+    const next = this.path.shift();
+    if (!next) return false;
+    unit.direction = directionBetween(unit, next) ?? unit.direction;
+    unit.x = next.x; unit.y = next.y;
+    return true;
+  }
+  cancel(): void { this.path = []; }
+}
