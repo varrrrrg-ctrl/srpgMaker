@@ -4,10 +4,11 @@ import { attackableTargets, attackUnit, updateResult } from './combat';
 import { AutoMover, changeDirection, directionFromFlick, isTapGesture, startAutoMove } from './movement';
 import { draw, CANVAS_HEIGHT, CANVAS_WIDTH } from './render';
 import { loadStage, parseStage, saveStage, stageToJson } from './storage';
+import { skillForUnit, useUnitSkill } from './skills';
 import { currentUnit, finishCurrentAction, remainingActionOrder, startRound } from './turn';
-import { cloneStage, createStage, defaultUnit, indexOf, type Direction, type PlayState, type StageData, type Tool } from './types';
+import { cloneStage, createTestStage, defaultUnit, indexOf, type Direction, type PlayState, type StageData, type Tool } from './types';
 
-let editStage: StageData = createStage();
+let editStage: StageData = createTestStage();
 let playState: PlayState | null = null;
 let tool: Tool = 'floor';
 let pointerStart: { x: number; y: number; onActiveUnit: boolean } | null = null;
@@ -15,14 +16,14 @@ let enemyTimer: number | null = null;
 const autoMover = new AutoMover();
 const app = document.querySelector<HTMLDivElement>('#app')!;
 app.className = 'app';
-app.innerHTML = `<div class="toolbar"><button id="edit">編集</button><button id="play">テストプレイ</button><button id="save">保存</button><label class="file-label">読込<input id="file" type="file" accept="application/json,.json"></label><button id="jsonBtn">JSON出力</button><button id="reset">リセット</button></div><div class="battle-info hidden"><strong class="round"></strong><span class="current"></span><span class="order"></span></div><div class="canvas-wrap"><canvas width="${CANVAS_WIDTH}" height="${CANVAS_HEIGHT}"></canvas></div><div class="actions hidden"><button id="attack">攻撃</button><button id="direction">向き変更</button><button id="return">開始位置へ戻る</button><button id="cancel">キャンセル</button><button id="end">行動終了</button><button id="back">編集へ戻る</button><div class="direction-pad hidden"><button data-direction="up">↑</button><button data-direction="left">←</button><button data-direction="down">↓</button><button data-direction="right">→</button></div></div><div class="palette"></div><div class="status"></div><textarea class="json" readonly placeholder="JSON出力はここに表示されます"></textarea>`;
+app.innerHTML = `<div class="toolbar"><button id="edit">編集</button><button id="play">テストプレイ</button><button id="save">保存</button><label class="file-label">読込<input id="file" type="file" accept="application/json,.json"></label><button id="jsonBtn">JSON出力</button><button id="reset">リセット</button></div><div class="battle-info hidden"><strong class="round"></strong><span class="current"></span><span class="order"></span></div><div class="canvas-wrap"><canvas width="${CANVAS_WIDTH}" height="${CANVAS_HEIGHT}"></canvas></div><div class="actions hidden"><button id="attack">攻撃</button><button id="skill">スキル</button><button id="direction">向き変更</button><button id="return">開始位置へ戻る</button><button id="cancel">キャンセル</button><button id="end">行動終了</button><button id="back">編集へ戻る</button><div class="direction-pad hidden"><button data-direction="up">↑</button><button data-direction="left">←</button><button data-direction="down">↓</button><button data-direction="right">→</button></div></div><div class="palette"></div><div class="status"></div><textarea class="json" readonly placeholder="JSON出力はここに表示されます"></textarea>`;
 const canvas = app.querySelector('canvas')!; const ctx = canvas.getContext('2d')!; const status = app.querySelector<HTMLDivElement>('.status')!; const palette = app.querySelector<HTMLDivElement>('.palette')!; const actions = app.querySelector<HTMLDivElement>('.actions')!; const directionPad = app.querySelector<HTMLDivElement>('.direction-pad')!; const battleInfo = app.querySelector<HTMLDivElement>('.battle-info')!; const json = app.querySelector<HTMLTextAreaElement>('.json')!;
 const labels: Record<Tool, string> = { floor: '床', wall: '壁', jump: 'ジャンプ障害物', ally: '味方', enemy: '敵', erase: '消去' };
 const directionLabels: Record<Direction, string> = { up: '上', down: '下', left: '左', right: '右' };
 for (const t of Object.keys(labels) as Tool[]) { const button = document.createElement('button'); button.textContent = labels[t]; button.addEventListener('click', () => { tool = t; render(); }); palette.append(button); }
 const currentStage = (): StageData => playState?.stage ?? editStage;
 const selectedUnit = () => playState?.stage.units.find((unit) => unit.id === playState?.selectedUnitId);
-const unitLabel = (id: string): string => { const unit = playState?.stage.units.find((candidate) => candidate.id === id); return unit ? `${unit.side === 'ally' ? '味方' : '敵'}(${unit.id.slice(0, 6)})` : id.slice(0, 6); };
+const unitLabel = (id: string): string => { const unit = playState?.stage.units.find((candidate) => candidate.id === id); return unit ? (unit.name ?? `${unit.side === 'ally' ? '味方' : '敵'}(${unit.id.slice(0, 6)})`) : id.slice(0, 6); };
 const render = (): void => {
   draw(ctx, currentStage(), playState, tool);
   palette.querySelectorAll('button').forEach((button) => button.classList.toggle('active', button.textContent === labels[tool]));
@@ -33,9 +34,14 @@ const render = (): void => {
   actions.querySelectorAll<HTMLButtonElement>('button:not(#back)').forEach((button) => { button.disabled = !active; });
   const attack = app.querySelector<HTMLButtonElement>('#attack')!;
   attack.disabled = !active || !activeUnit || attackableTargets(currentStage().units, activeUnit).length === 0;
+  const skillButton = app.querySelector<HTMLButtonElement>('#skill')!;
+  const skill = activeUnit && skillForUnit(activeUnit);
+  skillButton.textContent = skill ? `${skill.name} MP ${skill.mpCost}` : 'スキルなし';
+  skillButton.disabled = !active || !activeUnit || !skill || activeUnit.currentMp < skill.mpCost
+    || (skill.effect !== 'guard' && attackableTargets(currentStage().units, activeUnit).length === 0);
   if (playState) {
     battleInfo.querySelector('.round')!.textContent = `ラウンド ${playState.round}`;
-    battleInfo.querySelector('.current')!.textContent = activeUnit ? `行動中: ${unitLabel(activeUnit.id)} / 向き: ${directionLabels[activeUnit.direction]}` : '';
+    battleInfo.querySelector('.current')!.textContent = activeUnit ? `行動中: ${unitLabel(activeUnit.id)} / HP ${activeUnit.hp}/${activeUnit.maxHp} / MP ${activeUnit.currentMp}/${activeUnit.maxMp} / ATK ${activeUnit.attack} / DEF ${activeUnit.defense} / 向き: ${directionLabels[activeUnit.direction]}` : '';
     battleInfo.querySelector('.order')!.textContent = `残り: ${remainingActionOrder(playState).map((unit) => unitLabel(unit.id)).join(' → ') || 'なし'}`;
   }
   status.textContent = playState ? playState.message : `選択中：${labels[tool]}。パレットを選び、マスをタップして配置します。`;
@@ -86,14 +92,15 @@ app.querySelector('#play')!.addEventListener('click', () => {
 });
 app.querySelector('#save')!.addEventListener('click', () => { saveStage(editStage); status.textContent = 'localStorageへ保存しました。'; });
 app.querySelector('#jsonBtn')!.addEventListener('click', () => { json.value = stageToJson(editStage); });
-app.querySelector('#reset')!.addEventListener('click', () => { autoMover.cancel(); editStage = createStage(); playState = null; render(); });
+app.querySelector('#reset')!.addEventListener('click', () => { autoMover.cancel(); editStage = createTestStage(); playState = null; render(); });
 app.querySelector('#end')!.addEventListener('click', finishAction);
 app.querySelector('#attack')!.addEventListener('click', () => { if (!playState) return; const attacker = currentUnit(playState); const target = attacker && attackableTargets(playState.stage.units, attacker)[0]; if (!attacker || attacker.side !== 'ally' || !target) return; attackUnit(playState, attacker.id, target.id); if (playState.result === 'playing') finishAction(); else render(); });
+app.querySelector('#skill')!.addEventListener('click', () => { if (!playState) return; const unit = currentUnit(playState); if (!unit || unit.side !== 'ally') return; const result = useUnitSkill(playState, unit.id); if (!result.success) { render(); return; } if (playState.result === 'playing') finishAction(); else render(); });
 app.querySelector('#direction')!.addEventListener('click', () => { if (playState && selectedUnit()) { playState.phase = 'direction'; playState.message = '方向ボタンまたはユニット上のフリックで向きを変更できます。'; render(); } });
 directionPad.querySelectorAll<HTMLButtonElement>('button').forEach((button) => button.addEventListener('click', () => { setDirection(button.dataset.direction as Direction); render(); }));
 app.querySelector('#cancel')!.addEventListener('click', () => { if (playState?.phase === 'direction') { playState.phase = 'move'; playState.message = '自由移動を続けられます。'; render(); } });
 app.querySelector('#return')!.addEventListener('click', () => { const unit = selectedUnit(); if (playState?.origin && unit && !unit.acted) { unit.x = playState.origin.position.x; unit.y = playState.origin.position.y; unit.direction = playState.origin.direction; playState.phase = 'move'; playState.message = 'ターン開始位置と向きへ戻りました。'; render(); } });
 app.querySelector('#back')!.addEventListener('click', () => { autoMover.cancel(); playState = null; render(); });
 app.querySelector<HTMLInputElement>('#file')!.addEventListener('change', async (event) => { const file = (event.target as HTMLInputElement).files?.[0]; if (file) { editStage = parseStage(await file.text()); playState = null; render(); } });
-try { editStage = loadStage(); } catch { editStage = createStage(); }
+try { editStage = loadStage(); if (editStage.units.length === 0) editStage = createTestStage(); } catch { editStage = createTestStage(); }
 render();
