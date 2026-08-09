@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { chooseEnemyAction } from './ai';
-import { attackableTargets, attackUnit, updateResult } from './combat';
-import { changeDirection, directionFromFlick, movementMap, movementStep, reachablePositions, shortestPath } from './movement';
+import { chooseEnemyAction, runEnemyAction } from './ai';
+import { applyDirectionalModifier, attackableTargets, attackUnit, directionalAttackModifier, updateResult } from './combat';
+import { AutoMover, autoMovePath, changeDirection, directionFromFlick, movementMap, movementStep, pathCost, reachablePositions, shortestPath } from './movement';
 import { parseStage, stageToJson } from './storage';
 import { buildActionOrder, currentUnit, finishCurrentAction, startRound } from './turn';
 import { createStage, defaultUnit, indexOf, type PlayState } from './types';
@@ -99,16 +99,59 @@ describe('movement', () => {
     expect(directionFromFlick(25, 10)).toBe('right'); expect(directionFromFlick(-25, 3)).toBe('left'); expect(directionFromFlick(2, -21)).toBe('up'); expect(directionFromFlick(8, 22)).toBe('down'); expect(directionFromFlick(19, 0)).toBeNull();
     changeDirection(unit, directionFromFlick(25, 0)!); expect({ x: unit.x, y: unit.y, acted: unit.acted }).toEqual(before);
   });
+  it('範囲内の離れたマスへ決定的な最短経路で自動移動する', () => {
+    const stage = createStage(); const unit = defaultUnit('ally', 0, 0); unit.move = 4; stage.units.push(unit); const reachable = reachablePositions(stage, unit);
+    const path = autoMovePath(stage, unit, reachable, { x: 2, y: 1 }); expect(path).toEqual([{ x: 0, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 1 }, { x: 2, y: 1 }]);
+    const mover = new AutoMover(); expect(mover.start(path)).toBe(true); expect(mover.start(path)).toBe(false);
+    while (mover.active) mover.advance(unit); expect({ x: unit.x, y: unit.y }).toEqual({ x: 2, y: 1 }); expect(unit.direction).toBe('right');
+  });
+  it('自動移動は壁やユニットを通常通過せず、到達不能なら開始しない', () => {
+    const stage = createStage(); const unit = defaultUnit('ally', 0, 0); unit.move = 4; stage.units.push(unit, defaultUnit('ally', 1, 0)); stage.terrain[indexOf({ x: 0, y: 1 })] = 'wall';
+    const reachable = reachablePositions(stage, unit); expect(autoMovePath(stage, unit, reachable, { x: 1, y: 0 })).toEqual([]); expect(autoMovePath(stage, unit, reachable, { x: 0, y: 2 })).toEqual([]);
+  });
+  it('ジャンプを経路上の1アクションかつコスト2として自動移動する', () => {
+    const stage = createStage(); const unit = defaultUnit('ally', 0, 0); unit.move = 3; stage.units.push(unit); stage.terrain[indexOf({ x: 1, y: 0 })] = 'jump';
+    const path = autoMovePath(stage, unit, reachablePositions(stage, unit), { x: 3, y: 0 }); expect(path).toEqual([{ x: 0, y: 0 }, { x: 2, y: 0 }, { x: 3, y: 0 }]); expect(pathCost(path)).toBe(3);
+  });
+  it('自動移動後もターン開始時の固定範囲内へ再移動できる', () => {
+    const stage = createStage(); const unit = defaultUnit('ally', 2, 2); unit.move = 2; stage.units.push(unit); const reachable = reachablePositions(stage, unit); const mover = new AutoMover();
+    mover.start(autoMovePath(stage, unit, reachable, { x: 4, y: 2 })); while (mover.active) mover.advance(unit);
+    const returnPath = autoMovePath(stage, unit, reachable, { x: 0, y: 2 }); expect(returnPath.length).toBeGreaterThan(1); mover.start(returnPath); while (mover.active) mover.advance(unit); expect({ x: unit.x, y: unit.y }).toEqual({ x: 0, y: 2 });
+  });
+});
+
+describe('directional damage', () => {
+  const relative = (direction: 'up' | 'down' | 'left' | 'right', attackerPosition: { x: number; y: number }) => {
+    const defender = defaultUnit('enemy', 2, 2); defender.direction = direction; const attacker = defaultUnit('ally', attackerPosition.x, attackerPosition.y); return directionalAttackModifier(attacker, defender);
+  };
+  it('正面1.0倍、側面1.1倍、背後1.3倍をMath.roundする', () => {
+    const defender = defaultUnit('enemy', 2, 2); defender.direction = 'up';
+    expect(applyDirectionalModifier(10, defaultUnit('ally', 2, 1), defender)).toBe(10);
+    expect(applyDirectionalModifier(10, defaultUnit('ally', 1, 2), defender)).toBe(11);
+    expect(applyDirectionalModifier(10, defaultUnit('ally', 2, 3), defender)).toBe(13);
+    expect(applyDirectionalModifier(3, defaultUnit('ally', 1, 2), defender)).toBe(3);
+  });
+  it('up/down/left/rightの全方向を防御側基準で判定する', () => {
+    expect(relative('up', { x: 2, y: 1 }).direction).toBe('front'); expect(relative('up', { x: 2, y: 3 }).direction).toBe('back');
+    expect(relative('down', { x: 2, y: 3 }).direction).toBe('front'); expect(relative('down', { x: 2, y: 1 }).direction).toBe('back');
+    expect(relative('left', { x: 1, y: 2 }).direction).toBe('front'); expect(relative('left', { x: 3, y: 2 }).direction).toBe('back');
+    expect(relative('right', { x: 3, y: 2 }).direction).toBe('front'); expect(relative('right', { x: 1, y: 2 }).direction).toBe('back');
+    expect(relative('right', { x: 2, y: 1 }).direction).toBe('side');
+  });
+  it('敵AIの通常攻撃にも背後補正を適用する', () => {
+    const state = play(); const ally = defaultUnit('ally', 1, 1); ally.direction = 'up'; const enemy = defaultUnit('enemy', 1, 2); enemy.direction = 'up'; state.stage.units.push(ally, enemy);
+    runEnemyAction(state, enemy.id); expect(ally.hp).toBe(6); expect(state.message).toContain('背後攻撃');
+  });
 });
 
 describe('combat/result/storage', () => {
   it('攻撃でHPが減る', () => {
-    const state = play(); const a = defaultUnit('ally', 0, 0); a.direction = 'down'; const e = defaultUnit('enemy', 0, 1); state.stage.units.push(a, e);
+    const state = play(); const a = defaultUnit('ally', 0, 0); a.direction = 'down'; const e = defaultUnit('enemy', 0, 1); e.direction = 'up'; state.stage.units.push(a, e);
     attackUnit(state, a.id, e.id);
     expect(state.stage.units.find((u) => u.id === e.id)?.hp).toBe(7);
   });
   it('HPが0以下のユニットが除去される', () => {
-    const state = play(); const a = defaultUnit('ally', 0, 0); a.direction = 'down'; const e = defaultUnit('enemy', 0, 1); e.hp = 3; state.stage.units.push(a, e);
+    const state = play(); const a = defaultUnit('ally', 0, 0); a.direction = 'down'; const e = defaultUnit('enemy', 0, 1); e.direction = 'up'; e.hp = 3; state.stage.units.push(a, e);
     attackUnit(state, a.id, e.id);
     expect(state.stage.units.some((u) => u.id === e.id)).toBe(false);
   });
