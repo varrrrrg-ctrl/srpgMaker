@@ -5,9 +5,9 @@ import { AutoMover, changeDirection, directionFromFlick, isTapGesture, startAuto
 import { draw, CANVAS_HEIGHT, CANVAS_WIDTH } from './render';
 import { loadStage, parseStage, saveStage, stageToJson } from './storage';
 import { currentUnit, finishCurrentAction, remainingActionOrder, startRound } from './turn';
-import { cloneStage, createStage, defaultUnit, indexOf, type Direction, type PlayState, type StageData, type Tool } from './types';
+import { cloneStage, createTestStage, defaultUnit, indexOf, type Direction, type PlayState, type StageData, type Tool } from './types';
 
-let editStage: StageData = createStage();
+let editStage: StageData = createTestStage();
 let playState: PlayState | null = null;
 let tool: Tool = 'floor';
 let pointerStart: { x: number; y: number; onActiveUnit: boolean } | null = null;
@@ -22,7 +22,7 @@ const directionLabels: Record<Direction, string> = { up: '上', down: '下', lef
 for (const t of Object.keys(labels) as Tool[]) { const button = document.createElement('button'); button.textContent = labels[t]; button.addEventListener('click', () => { tool = t; render(); }); palette.append(button); }
 const currentStage = (): StageData => playState?.stage ?? editStage;
 const selectedUnit = () => playState?.stage.units.find((unit) => unit.id === playState?.selectedUnitId);
-const unitLabel = (id: string): string => { const unit = playState?.stage.units.find((candidate) => candidate.id === id); return unit ? `${unit.side === 'ally' ? '味方' : '敵'}(${unit.id.slice(0, 6)})` : id.slice(0, 6); };
+const unitLabel = (id: string): string => { const unit = playState?.stage.units.find((candidate) => candidate.id === id); return unit ? (unit.name ?? `${unit.side === 'ally' ? '味方' : '敵'}(${unit.id.slice(0, 6)})`) : id.slice(0, 6); };
 const render = (): void => {
   draw(ctx, currentStage(), playState, tool);
   palette.querySelectorAll('button').forEach((button) => button.classList.toggle('active', button.textContent === labels[tool]));
@@ -35,7 +35,7 @@ const render = (): void => {
   attack.disabled = !active || !activeUnit || attackableTargets(currentStage().units, activeUnit).length === 0;
   if (playState) {
     battleInfo.querySelector('.round')!.textContent = `ラウンド ${playState.round}`;
-    battleInfo.querySelector('.current')!.textContent = activeUnit ? `行動中: ${unitLabel(activeUnit.id)} / 向き: ${directionLabels[activeUnit.direction]}` : '';
+    battleInfo.querySelector('.current')!.textContent = activeUnit ? `行動中: ${unitLabel(activeUnit.id)} / HP ${activeUnit.hp}/${activeUnit.maxHp} / ATK ${activeUnit.attack} / DEF ${activeUnit.defense} / 向き: ${directionLabels[activeUnit.direction]}` : '';
     battleInfo.querySelector('.order')!.textContent = `残り: ${remainingActionOrder(playState).map((unit) => unitLabel(unit.id)).join(' → ') || 'なし'}`;
   }
   status.textContent = playState ? playState.message : `選択中：${labels[tool]}。パレットを選び、マスをタップして配置します。`;
@@ -86,7 +86,7 @@ app.querySelector('#play')!.addEventListener('click', () => {
 });
 app.querySelector('#save')!.addEventListener('click', () => { saveStage(editStage); status.textContent = 'localStorageへ保存しました。'; });
 app.querySelector('#jsonBtn')!.addEventListener('click', () => { json.value = stageToJson(editStage); });
-app.querySelector('#reset')!.addEventListener('click', () => { autoMover.cancel(); editStage = createStage(); playState = null; render(); });
+app.querySelector('#reset')!.addEventListener('click', () => { autoMover.cancel(); editStage = createTestStage(); playState = null; render(); });
 app.querySelector('#end')!.addEventListener('click', finishAction);
 app.querySelector('#attack')!.addEventListener('click', () => { if (!playState) return; const attacker = currentUnit(playState); const target = attacker && attackableTargets(playState.stage.units, attacker)[0]; if (!attacker || attacker.side !== 'ally' || !target) return; attackUnit(playState, attacker.id, target.id); if (playState.result === 'playing') finishAction(); else render(); });
 app.querySelector('#direction')!.addEventListener('click', () => { if (playState && selectedUnit()) { playState.phase = 'direction'; playState.message = '方向ボタンまたはユニット上のフリックで向きを変更できます。'; render(); } });
@@ -95,5 +95,5 @@ app.querySelector('#cancel')!.addEventListener('click', () => { if (playState?.p
 app.querySelector('#return')!.addEventListener('click', () => { const unit = selectedUnit(); if (playState?.origin && unit && !unit.acted) { unit.x = playState.origin.position.x; unit.y = playState.origin.position.y; unit.direction = playState.origin.direction; playState.phase = 'move'; playState.message = 'ターン開始位置と向きへ戻りました。'; render(); } });
 app.querySelector('#back')!.addEventListener('click', () => { autoMover.cancel(); playState = null; render(); });
 app.querySelector<HTMLInputElement>('#file')!.addEventListener('change', async (event) => { const file = (event.target as HTMLInputElement).files?.[0]; if (file) { editStage = parseStage(await file.text()); playState = null; render(); } });
-try { editStage = loadStage(); } catch { editStage = createStage(); }
+try { editStage = loadStage(); if (editStage.units.length === 0) editStage = createTestStage(); } catch { editStage = createTestStage(); }
 render();
