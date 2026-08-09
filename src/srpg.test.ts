@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { chooseEnemyAction, runEnemyAction } from './ai';
 import { applyDirectionalModifier, attackableTargets, attackUnit, directionalAttackModifier, updateResult } from './combat';
-import { AutoMover, autoMovePath, changeDirection, directionFromFlick, movementMap, movementStep, pathCost, reachablePositions, shortestPath } from './movement';
+import { AutoMover, autoMovePath, changeDirection, directionFromFlick, isTapGesture, movementMap, movementStep, pathCost, reachablePositions, shortestPath, startAutoMove } from './movement';
 import { parseStage, stageToJson } from './storage';
 import { buildActionOrder, currentUnit, finishCurrentAction, startRound } from './turn';
 import { createStage, defaultUnit, indexOf, type PlayState } from './types';
@@ -102,7 +102,7 @@ describe('movement', () => {
   it('範囲内の離れたマスへ決定的な最短経路で自動移動する', () => {
     const stage = createStage(); const unit = defaultUnit('ally', 0, 0); unit.move = 4; stage.units.push(unit); const reachable = reachablePositions(stage, unit);
     const path = autoMovePath(stage, unit, reachable, { x: 2, y: 1 }); expect(path).toEqual([{ x: 0, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 1 }, { x: 2, y: 1 }]);
-    const mover = new AutoMover(); expect(mover.start(path)).toBe(true); expect(mover.start(path)).toBe(false);
+    const mover = new AutoMover(); expect(startAutoMove(stage, unit, reachable, { x: 2, y: 1 }, mover)).toBe(true); expect(mover.start(path)).toBe(false);
     while (mover.active) mover.advance(unit); expect({ x: unit.x, y: unit.y }).toEqual({ x: 2, y: 1 }); expect(unit.direction).toBe('right');
   });
   it('自動移動は壁やユニットを通常通過せず、到達不能なら開始しない', () => {
@@ -117,6 +117,9 @@ describe('movement', () => {
     const stage = createStage(); const unit = defaultUnit('ally', 2, 2); unit.move = 2; stage.units.push(unit); const reachable = reachablePositions(stage, unit); const mover = new AutoMover();
     mover.start(autoMovePath(stage, unit, reachable, { x: 4, y: 2 })); while (mover.active) mover.advance(unit);
     const returnPath = autoMovePath(stage, unit, reachable, { x: 0, y: 2 }); expect(returnPath.length).toBeGreaterThan(1); mover.start(returnPath); while (mover.active) mover.advance(unit); expect({ x: unit.x, y: unit.y }).toEqual({ x: 0, y: 2 });
+  });
+  it('20px未満の通常タップをフリックやドラッグとして無視しない', () => {
+    expect(directionFromFlick(12, 8)).toBeNull(); expect(isTapGesture(12, 8)).toBe(true); expect(isTapGesture(20, 0)).toBe(false);
   });
 });
 
@@ -141,6 +144,14 @@ describe('directional damage', () => {
   it('敵AIの通常攻撃にも背後補正を適用する', () => {
     const state = play(); const ally = defaultUnit('ally', 1, 1); ally.direction = 'up'; const enemy = defaultUnit('enemy', 1, 2); enemy.direction = 'up'; state.stage.units.push(ally, enemy);
     runEnemyAction(state, enemy.id); expect(ally.hp).toBe(6); expect(state.message).toContain('背後攻撃');
+  });
+  it.each([
+    ['正面', 'down', { x: 1, y: 0 }, 3],
+    ['側面', 'left', { x: 1, y: 0 }, 3],
+    ['背後', 'up', { x: 1, y: 0 }, 4],
+  ] as const)('%s攻撃の補正後ダメージを実際のHP減少へ使う', (_label, defenderDirection, defenderPosition, expectedDamage) => {
+    const state = play(); const attacker = defaultUnit('ally', 1, 1); attacker.direction = 'up'; attacker.attack = 3; const defender = defaultUnit('enemy', defenderPosition.x, defenderPosition.y); defender.direction = defenderDirection; state.stage.units.push(attacker, defender);
+    attackUnit(state, attacker.id, defender.id); expect(defender.hp).toBe(defender.maxHp - expectedDamage);
   });
 });
 

@@ -3,6 +3,7 @@ import { neighbors, positionInDirection, type Direction, type PlayState, type Un
 
 export type AttackDirection = 'front' | 'side' | 'back';
 export interface DirectionalModifier { direction: AttackDirection; multiplier: number }
+export interface AttackDamage extends DirectionalModifier { damage: number }
 const opposite: Record<Direction, Direction> = { up: 'down', down: 'up', left: 'right', right: 'left' };
 
 export const directionalAttackModifier = (attacker: Unit, defender: Unit): DirectionalModifier => {
@@ -13,6 +14,10 @@ export const directionalAttackModifier = (attacker: Unit, defender: Unit): Direc
 };
 
 export const applyDirectionalModifier = (baseDamage: number, attacker: Unit, defender: Unit): number => Math.round(baseDamage * directionalAttackModifier(attacker, defender).multiplier);
+export const calculateAttackDamage = (baseDamage: number, attacker: Unit, defender: Unit): AttackDamage => {
+  const modifier = directionalAttackModifier(attacker, defender);
+  return { ...modifier, damage: Math.round(baseDamage * modifier.multiplier) };
+};
 export const adjacentEnemies = (units: Unit[], unit: Unit): Unit[] => units.filter((u) => u.side !== unit.side && neighbors(unit).some((p) => p.x === u.x && p.y === u.y));
 export const attackableTargets = (units: Unit[], unit: Unit): Unit[] => {
   const target = positionInDirection(unit, unit.direction);
@@ -22,11 +27,10 @@ export const attackUnit = (state: PlayState, attackerId: string, targetId: strin
   const attacker = state.stage.units.find((u) => u.id === attackerId);
   const target = state.stage.units.find((u) => u.id === targetId);
   if (!attacker || !target || !attackableTargets(state.stage.units, attacker).some((u) => u.id === targetId) || attacker.acted) return;
-  const modifier = directionalAttackModifier(attacker, target);
-  const damage = applyDirectionalModifier(attacker.attack, attacker, target);
-  target.hp -= damage;
+  const attack = calculateAttackDamage(attacker.attack, attacker, target);
+  target.hp -= attack.damage;
   const labels: Record<AttackDirection, string> = { front: '正面', side: '側面', back: '背後' };
-  state.message = `${labels[modifier.direction]}攻撃！ ${damage}ダメージ。`;
+  state.message = `${labels[attack.direction]}攻撃！ ${attack.damage}ダメージ。`;
   state.stage.units = state.stage.units.filter((u) => u.hp > 0);
   attacker.acted = true;
   updateResult(state);

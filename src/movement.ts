@@ -52,6 +52,8 @@ export const directionFromFlick = (dx: number, dy: number, threshold = 20): Dire
   return Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
 };
 
+export const isTapGesture = (dx: number, dy: number, threshold = 20): boolean => Math.hypot(dx, dy) < threshold;
+
 export const movementStep = (stage: StageData, unit: Unit, reachable: Position[], destination: Position): boolean => {
   if (unit.acted || !reachable.some((p) => p.x === destination.x && p.y === destination.y) || !canStop(stage, destination, unit.id)) return false;
   const dx = Math.abs(destination.x - unit.x); const dy = Math.abs(destination.y - unit.y);
@@ -108,3 +110,5 @@ export class AutoMover {
   }
   cancel(): void { this.path = []; }
 }
+
+export const startAutoMove = (stage: StageData, unit: Unit, reachable: Position[], goal: Position, mover: AutoMover): boolean => mover.start(autoMovePath(stage, unit, reachable, goal));

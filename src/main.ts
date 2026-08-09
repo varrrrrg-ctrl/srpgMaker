@@ -1,8 +1,7 @@
 import './style.css';
 import { runEnemyAction } from './ai';
 import { attackableTargets, attackUnit, updateResult } from './combat';
-import { AutoMover, autoMovePath, changeDirection, directionFromFlick } from './movement';
-import { changeDirection, directionFromFlick, movementStep } from './movement';
+import { AutoMover, changeDirection, directionFromFlick, isTapGesture, startAutoMove } from './movement';
 import { draw, CANVAS_HEIGHT, CANVAS_WIDTH } from './render';
 import { loadStage, parseStage, saveStage, stageToJson } from './storage';
 import { currentUnit, finishCurrentAction, remainingActionOrder, startRound } from './turn';
@@ -66,8 +65,7 @@ const playTap = (x: number, y: number): void => {
   if (!playState || playState.result !== 'playing' || autoMover.active) return;
   const selected = selectedUnit(); if (!selected || currentUnit(playState)?.id !== selected.id || selected.side !== 'ally') return;
   if ((playState.phase === 'move' || playState.phase === 'direction') && playState.origin) {
-    const path = autoMovePath(playState.stage, selected, playState.origin.reachable, { x, y });
-    if (autoMover.start(path)) { playState.phase = 'move'; playState.message = '移動中です…'; render(); window.setTimeout(animateMovement, 120); }
+    if (startAutoMove(playState.stage, selected, playState.origin.reachable, { x, y }, autoMover)) { playState.phase = 'move'; playState.message = '移動中です…'; render(); window.setTimeout(animateMovement, 120); }
   }
 };
 canvas.addEventListener('pointerdown', (event) => { if (autoMover.active) { pointerStart = null; return; } const cell = cellFromEvent(event); const unit = selectedUnit(); pointerStart = { x: event.clientX, y: event.clientY, onActiveUnit: Boolean(unit && unit.x === cell.x && unit.y === cell.y && unit.side === 'ally') }; if (playState) canvas.setPointerCapture(event.pointerId); });
@@ -76,7 +74,7 @@ canvas.addEventListener('pointerup', (event) => {
   const dx = event.clientX - pointerStart.x; const dy = event.clientY - pointerStart.y; const flickDirection = pointerStart.onActiveUnit ? directionFromFlick(dx, dy) : null;
   pointerStart = null;
   if (flickDirection) { setDirection(flickDirection); render(); return; }
-  if (Math.hypot(dx, dy) >= 8) return;
+  if (!isTapGesture(dx, dy, playState ? 20 : 8)) return;
   const cell = cellFromEvent(event); if (cell.x < 0 || cell.x >= 10 || cell.y < 0 || cell.y >= 8) return;
   playState ? playTap(cell.x, cell.y) : editTap(cell.x, cell.y); render();
 });
