@@ -1,4 +1,3 @@
-import { attackableTargets } from './combat';
 import { MAP_HEIGHT, MAP_WIDTH, indexOf, type PlayState, type StageData, type Tool } from './types';
 export const CELL = 36;
 export const CANVAS_WIDTH = CELL * MAP_WIDTH;
@@ -23,7 +22,6 @@ export const draw = (ctx: CanvasRenderingContext2D, stage: StageData, play: Play
     ctx.fillStyle = '#fff'; ctx.font = 'bold 15px sans-serif'; ctx.fillText(arrows[u.direction], u.x * CELL + CELL / 2, u.y * CELL + CELL / 2 - 10);
   }
   if (selected) { ctx.strokeStyle = '#ffe66d'; ctx.lineWidth = 3; ctx.strokeRect(selected.x * CELL + 2, selected.y * CELL + 2, CELL - 4, CELL - 4); ctx.lineWidth = 1; }
-  if (play && play.phase === 'attack' && selected) for (const e of attackableTargets(play.stage.units, selected)) { ctx.strokeStyle = '#fff200'; ctx.lineWidth = 4; ctx.strokeRect(e.x * CELL + 4, e.y * CELL + 4, CELL - 8, CELL - 8); ctx.lineWidth = 1; }
   if (play && play.result !== 'playing') { ctx.fillStyle = 'rgba(0,0,0,.65)'; ctx.fillRect(20, 90, CANVAS_WIDTH - 40, 100); ctx.fillStyle = '#fff'; ctx.font = '28px sans-serif'; ctx.fillText(play.result === 'victory' ? '勝利！' : '敗北...', CANVAS_WIDTH / 2, 150); }
   void selectedTool;
 };
