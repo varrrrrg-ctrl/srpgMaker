@@ -1,5 +1,4 @@
-import { adjacentEnemies } from './combat';
-import { reachablePositions } from './movement';
+import { attackableTargets } from './combat';
 import { MAP_HEIGHT, MAP_WIDTH, indexOf, type PlayState, type StageData, type Tool } from './types';
 export const CELL = 36;
 export const CANVAS_WIDTH = CELL * MAP_WIDTH;
@@ -7,7 +6,7 @@ export const CANVAS_HEIGHT = CELL * MAP_HEIGHT;
 export const draw = (ctx: CanvasRenderingContext2D, stage: StageData, play: PlayState | null, selectedTool: Tool): void => {
   ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
   const selected = play?.selectedUnitId ? play.stage.units.find((u) => u.id === play.selectedUnitId) : null;
-  const reach = play && selected && play.phase === 'move' ? reachablePositions(play.stage, selected) : [];
+  const reach = play?.origin && play.origin.unitId === selected?.id ? play.origin.reachable : [];
   for (let y = 0; y < MAP_HEIGHT; y++) for (let x = 0; x < MAP_WIDTH; x++) {
     const terrain = stage.terrain[indexOf({ x, y })];
     ctx.fillStyle = terrain === 'wall' ? '#8d99a6' : terrain === 'jump' ? '#9a6334' : '#dcecc8';
@@ -20,9 +19,11 @@ export const draw = (ctx: CanvasRenderingContext2D, stage: StageData, play: Play
     ctx.beginPath(); ctx.arc(u.x * CELL + CELL / 2, u.y * CELL + CELL / 2, 12, 0, Math.PI * 2); ctx.fill();
     if (u.acted) { ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.fillRect(u.x * CELL + 6, u.y * CELL + 6, CELL - 12, CELL - 12); }
     ctx.fillStyle = '#fff'; ctx.font = '11px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(String(u.hp), u.x * CELL + CELL / 2, u.y * CELL + CELL / 2 + 4);
+    const arrows = { up: '↑', down: '↓', left: '←', right: '→' } as const;
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 15px sans-serif'; ctx.fillText(arrows[u.direction], u.x * CELL + CELL / 2, u.y * CELL + CELL / 2 - 10);
   }
   if (selected) { ctx.strokeStyle = '#ffe66d'; ctx.lineWidth = 3; ctx.strokeRect(selected.x * CELL + 2, selected.y * CELL + 2, CELL - 4, CELL - 4); ctx.lineWidth = 1; }
-  if (play && play.phase === 'action' && selected) for (const e of adjacentEnemies(play.stage.units, selected)) { ctx.strokeStyle = '#fffd'; ctx.lineWidth = 4; ctx.strokeRect(e.x * CELL + 4, e.y * CELL + 4, CELL - 8, CELL - 8); ctx.lineWidth = 1; }
+  if (play && selected?.side === 'ally') for (const e of attackableTargets(play.stage.units, selected)) { ctx.strokeStyle = '#fff200'; ctx.lineWidth = 4; ctx.strokeRect(e.x * CELL + 4, e.y * CELL + 4, CELL - 8, CELL - 8); ctx.lineWidth = 1; }
   if (play && play.result !== 'playing') { ctx.fillStyle = 'rgba(0,0,0,.65)'; ctx.fillRect(20, 90, CANVAS_WIDTH - 40, 100); ctx.fillStyle = '#fff'; ctx.font = '28px sans-serif'; ctx.fillText(play.result === 'victory' ? '勝利！' : '敗北...', CANVAS_WIDTH / 2, 150); }
   void selectedTool;
 };

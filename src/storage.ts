@@ -5,7 +5,10 @@ export const loadStage = (): StageData => parseStage(localStorage.getItem(KEY) ?
 export const parseStage = (text: string): StageData => {
   try {
     const data = JSON.parse(text) as StageData;
-    if (data.version === 1 && Array.isArray(data.terrain) && Array.isArray(data.units)) return data;
+    if (data.version === 1 && Array.isArray(data.terrain) && Array.isArray(data.units)) {
+      data.units.forEach((unit) => { if (typeof unit.speed !== 'number') unit.speed = 10; });
+      return data;
+    }
   } catch { /* invalid user json */ }
   return createStage();
 };
