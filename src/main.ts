@@ -2,6 +2,7 @@ import './style.css';
 import { runEnemyAction } from './ai';
 import { attackableTargets, attackUnit, updateResult } from './combat';
 import { AutoMover, autoMovePath, changeDirection, directionFromFlick } from './movement';
+import { changeDirection, directionFromFlick, movementStep } from './movement';
 import { draw, CANVAS_HEIGHT, CANVAS_WIDTH } from './render';
 import { loadStage, parseStage, saveStage, stageToJson } from './storage';
 import { currentUnit, finishCurrentAction, remainingActionOrder, startRound } from './turn';
