@@ -9,11 +9,12 @@ export type Turn = 'ally' | 'enemy';
 export type Result = 'playing' | 'victory' | 'defeat';
 export type PlayPhase = 'select' | 'move' | 'attack' | 'direction' | 'enemy';
 export interface Position { x: number; y: number }
-export interface Unit { id: string; side: UnitSide; x: number; y: number; hp: number; maxHp: number; attack: number; move: number; direction: Direction; acted: boolean }
+export interface Unit { id: string; side: UnitSide; x: number; y: number; hp: number; maxHp: number; attack: number; move: number; speed: number; direction: Direction; acted: boolean }
 export interface StageData { version: 1; terrain: Terrain[]; units: Unit[] }
 export interface TurnOrigin { unitId: string; position: Position; direction: Direction; reachable: Position[] }
-export interface PlayState { stage: StageData; turn: Turn; selectedUnitId: string | null; phase: PlayPhase; origin: TurnOrigin | null; result: Result; message: string }
-export const defaultUnit = (side: UnitSide, x: number, y: number): Unit => ({ id: crypto.randomUUID(), side, x, y, hp: 10, maxHp: 10, attack: 3, move: 3, direction: side === 'ally' ? 'up' : 'down', acted: false });
+export interface PlayState { stage: StageData; turn: Turn; round: number; actionOrder: string[]; currentActionIndex: number; selectedUnitId: string | null; phase: PlayPhase; origin: TurnOrigin | null; result: Result; message: string }
+export const DEFAULT_SPEED = 10;
+export const defaultUnit = (side: UnitSide, x: number, y: number): Unit => ({ id: crypto.randomUUID(), side, x, y, hp: 10, maxHp: 10, attack: 3, move: 3, speed: DEFAULT_SPEED, direction: side === 'ally' ? 'up' : 'down', acted: false });
 export const indexOf = (p: Position): number => p.y * MAP_WIDTH + p.x;
 export const inBounds = (p: Position): boolean => p.x >= 0 && p.x < MAP_WIDTH && p.y >= 0 && p.y < MAP_HEIGHT;
 export const neighbors = (p: Position): Position[] => [{ x: p.x, y: p.y - 1 }, { x: p.x, y: p.y + 1 }, { x: p.x - 1, y: p.y }, { x: p.x + 1, y: p.y }].filter(inBounds);
