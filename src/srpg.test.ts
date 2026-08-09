@@ -3,9 +3,9 @@ import { chooseEnemyAction, runEnemyAction } from './ai';
 import { applyDirectionalModifier, attackableTargets, attackUnit, calculateAttackDamage, calculateBaseDamage, directionalAttackModifier, updateResult } from './combat';
 import { AutoMover, autoMovePath, changeDirection, directionFromFlick, isTapGesture, movementMap, movementStep, pathCost, reachablePositions, shortestPath, startAutoMove } from './movement';
 import { parseStage, stageToJson } from './storage';
-import { SKILLS, useUnitSkill } from './skills';
+import { areaPositions, selectableSkillTargets, skillRangePositions, SKILLS, useUnitSkill } from './skills';
 import { buildActionOrder, currentUnit, finishCurrentAction, startRound } from './turn';
-import { createStage, createTestStage, defaultUnit, indexOf, PLAYER_PRESETS, type PlayState } from './types';
+import { createStage, createTestStage, defaultUnit, indexOf, placePresetUnit, PLAYER_PRESETS, presetUnit, type PlayState } from './types';
 
 const play = (): PlayState => ({ stage: createStage(), turn: 'ally', round: 1, actionOrder: [], currentActionIndex: 0, selectedUnitId: null, phase: 'select', origin: null, result: 'playing', message: '' });
 
@@ -322,5 +322,76 @@ describe('MP and unique skills', () => {
     expect(calculateAttackDamage(enemy, defender).damage).toBe(5);
     enemy.attack = 1; expect(calculateAttackDamage(enemy, defender).damage).toBe(1);
     startRound(state, 2); expect(defender.guarding).toBe(false); expect(defender.currentMp).toBe(20);
+  });
+});
+
+describe('skill range and second skills', () => {
+  it('diamond range1/2、line range2、area0/1を共通計算する', () => {
+    const stage = createStage(); const unit = presetUnit('ally', 'Balance', 4, 4); stage.units.push(unit);
+    expect(skillRangePositions(stage, unit, SKILLS['power-slash'])).toHaveLength(4);
+    expect(skillRangePositions(stage, unit, { ...SKILLS['power-slash'], range: 2 })).toHaveLength(12);
+    expect(skillRangePositions(stage, unit, SKILLS['shock-wave'])).toHaveLength(8);
+    expect(areaPositions({ x: 4, y: 4 }, 0)).toEqual([{ x: 4, y: 4 }]); expect(areaPositions({ x: 4, y: 4 }, 1)).toHaveLength(5);
+  });
+  it('Shock Waveは直線2マス内だけを選べ、壁越しや射程外は選べない', () => {
+    const stage = createStage(); const unit = presetUnit('ally', 'Balance', 2, 2); const valid = defaultUnit('enemy', 2, 4); const outside = defaultUnit('enemy', 2, 5); const diagonal = defaultUnit('enemy', 3, 3); stage.units.push(unit, valid, outside, diagonal);
+    expect(selectableSkillTargets(stage, unit, SKILLS['shock-wave'])).toEqual([{ x: 2, y: 4 }]);
+    stage.terrain[indexOf({ x: 2, y: 3 })] = 'wall'; expect(selectableSkillTargets(stage, unit, SKILLS['shock-wave'])).toEqual([]);
+  });
+  it('Ground Slamは使用者を中心に範囲内の複数敵だけへ1.1倍ダメージを与える', () => {
+    const state = play(); const tank = presetUnit('ally', 'Tank', 3, 3); tank.currentMp = 30;
+    const a = defaultUnit('enemy', 3, 2); const b = defaultUnit('enemy', 4, 3); const outside = defaultUnit('enemy', 5, 3); state.stage.units.push(tank, a, b, outside);
+    const result = useUnitSkill(state, tank.id, 'ground-slam', tank); expect(result.attacks).toHaveLength(2);
+    expect(a.hp).toBeLessThan(a.maxHp); expect(b.hp).toBeLessThan(b.maxHp); expect(outside.hp).toBe(outside.maxHp); expect(tank.currentMp).toBe(0);
+  });
+  it('ExecutionはMP40・2.2倍、Dash Strikeは距離2から隣接位置へ移動して1.5倍攻撃する', () => {
+    expect([SKILLS.execution.mpCost, SKILLS.execution.damageMultiplier]).toEqual([40, 2.2]);
+    const state = play(); const assault = presetUnit('ally', 'Assault', 2, 0); assault.currentMp = 30; const target = defaultUnit('enemy', 2, 2); state.stage.units.push(assault, target);
+    expect(useUnitSkill(state, assault.id, 'dash-strike', target).success).toBe(true); expect([assault.x, assault.y]).toEqual([2, 1]); expect(target.hp).toBeLessThan(target.maxHp);
+    const blocked = play(); const other = presetUnit('ally', 'Assault', 2, 0); other.currentMp = 30; const victim = defaultUnit('enemy', 2, 2); blocked.stage.units.push(other, victim, defaultUnit('ally', 2, 1), defaultUnit('ally', 1, 2), defaultUnit('ally', 3, 2), defaultUnit('ally', 2, 3));
+    expect(useUnitSkill(blocked, other.id, 'dash-strike', victim).success).toBe(false); expect(other.currentMp).toBe(30);
+  });
+  it('Protectは隣接味方の被ダメージを0.7倍にし、次ラウンドに解除する', () => {
+    const state = play(); const defender = presetUnit('ally', 'Defender', 2, 2); const ally = defaultUnit('ally', 2, 1); state.stage.units.push(defender, ally);
+    expect(useUnitSkill(state, defender.id, 'protect', ally).success).toBe(true); expect(ally.protected).toBe(true); expect(defender.currentMp).toBe(0);
+    const enemy = defaultUnit('enemy', 2, 0); expect(calculateAttackDamage(enemy, ally).damage).toBe(7);
+    startRound(state, 2); expect(ally.protected).toBe(false);
+  });
+});
+
+describe('enemy skill AI', () => {
+  it('敵もMPを持ち、初回は増えず次ラウンドに10回復する', () => {
+    const state = play(); const enemy = presetUnit('enemy', 'Attacker', 1, 1); enemy.currentMp = 0; state.stage.units.push(enemy); startRound(state, 1); expect(enemy.currentMp).toBe(0); startRound(state, 2); expect(enemy.currentMp).toBe(10);
+  });
+  it('通常攻撃より明確に強いスキルを選び、MP不足なら通常攻撃へフォールバックする', () => {
+    const state = play(); const enemy = presetUnit('enemy', 'Attacker', 2, 2); const ally = defaultUnit('ally', 2, 3); state.stage.units.push(enemy, ally);
+    expect(chooseEnemyAction(state, enemy).skillId).toBe('heavy-break'); runEnemyAction(state, enemy.id); expect(enemy.currentMp).toBe(0); expect(ally.hp).toBeLessThan(ally.maxHp);
+    const fallback = play(); const poor = presetUnit('enemy', 'Attacker', 2, 2); poor.currentMp = 0; const victim = defaultUnit('ally', 2, 3); fallback.stage.units.push(poor, victim);
+    expect(chooseEnemyAction(fallback, poor).skillId).toBeUndefined(); runEnemyAction(fallback, poor.id); expect(victim.hp).toBeLessThan(victim.maxHp);
+  });
+  it('Tankは複数対象へGround Slamを選び、Defenderは低HPでGuardまたは傷ついた味方へProtectを選ぶ', () => {
+    const slam = play(); const tank = presetUnit('enemy', 'Tank', 3, 3); tank.currentMp = 30; slam.stage.units.push(tank, defaultUnit('ally', 3, 2), defaultUnit('ally', 4, 3)); expect(chooseEnemyAction(slam, tank).skillId).toBe('ground-slam');
+    const guard = play(); const defender = presetUnit('enemy', 'Defender', 1, 1); defender.hp = 20; guard.stage.units.push(defender, defaultUnit('ally', 7, 7)); expect(chooseEnemyAction(guard, defender).skillId).toBe('guard');
+    const protect = play(); const protector = presetUnit('enemy', 'Defender', 1, 1); const friend = presetUnit('enemy', 'Attacker', 1, 2); friend.hp = 10; protect.stage.units.push(protector, friend, defaultUnit('ally', 7, 7)); expect(chooseEnemyAction(protect, protector).skillId).toBe('protect');
+  });
+  it('Tankは単体へShield Bashを使用し、AIは高い方向補正の攻撃位置を評価する', () => {
+    const state = play(); const tank = presetUnit('enemy', 'Tank', 2, 2); const ally = defaultUnit('ally', 2, 3); state.stage.units.push(tank, ally);
+    expect(chooseEnemyAction(state, tank).skillId).toBe('shield-bash'); runEnemyAction(state, tank.id); expect(tank.currentMp).toBe(0);
+    const directional = play(); const enemy = defaultUnit('enemy', 2, 4); enemy.move = 3; const target = defaultUnit('ally', 2, 2); target.direction = 'up'; directional.stage.units.push(enemy, target);
+    const choice = chooseEnemyAction(directional, enemy); expect(choice.score).toBeGreaterThanOrEqual(calculateAttackDamage(enemy, target).damage);
+  });
+});
+
+describe('typed stage placement and compatibility', () => {
+  it('Friendly/Enemyそれぞれ5タイプを配置でき、重複・壁には配置しない', () => {
+    for (const side of ['ally', 'enemy'] as const) for (const type of Object.keys(PLAYER_PRESETS) as Array<keyof typeof PLAYER_PRESETS>) {
+      const stage = createStage(); expect(placePresetUnit(stage, side, type, { x: 1, y: 1 })).toBe(true); const unit = stage.units[0]; expect([unit.side, unit.unitType, unit.skillIds]).toEqual([side, type, [...PLAYER_PRESETS[type].skillIds]]);
+      expect(placePresetUnit(stage, side, type, { x: 1, y: 1 })).toBe(false); stage.terrain[indexOf({ x: 2, y: 2 })] = 'wall'; expect(placePresetUnit(stage, side, type, { x: 2, y: 2 })).toBe(false);
+    }
+  });
+  it('type/faction/位置/向きを保存・復元し、typeなし旧データはBalanceへ補完する', () => {
+    const stage = createStage(); placePresetUnit(stage, 'enemy', 'Tank', { x: 4, y: 5 }); stage.units[0].direction = 'left'; const loaded = parseStage(stageToJson(stage)); expect([loaded.units[0].side, loaded.units[0].unitType, loaded.units[0].x, loaded.units[0].y, loaded.units[0].direction]).toEqual(['enemy', 'Tank', 4, 5, 'left']);
+    const old = { ...defaultUnit('enemy', 1, 1) } as Partial<ReturnType<typeof defaultUnit>>; delete old.unitType; delete old.skillIds;
+    const migrated = parseStage(JSON.stringify({ version: 1, terrain: createStage().terrain, units: [old] })); expect(migrated.units[0].unitType).toBe('Balance'); expect(migrated.units[0].skillIds).toEqual(['power-slash', 'shock-wave']);
   });
 });

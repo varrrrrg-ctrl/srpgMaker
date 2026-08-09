@@ -22,8 +22,8 @@ export const calculateBaseDamage = (attack: number, defense: number): number => 
 export const calculateAttackDamage = (attacker: Unit, defender: Unit, skillMultiplier = 1): AttackDamage => {
   const modifier = directionalAttackModifier(attacker, defender);
   const baseDamage = calculateBaseDamage(attacker.attack, defender.defense);
-  const guardMultiplier = defender.guarding ? 0.6 : 1;
-  return { ...modifier, damage: Math.max(1, Math.round(baseDamage * skillMultiplier * modifier.multiplier * guardMultiplier)) };
+  const defenseMultiplier = (defender.guarding ? 0.6 : 1) * (defender.protected ? 0.7 : 1);
+  return { ...modifier, damage: Math.max(1, Math.round(baseDamage * skillMultiplier * modifier.multiplier * defenseMultiplier)) };
 };
 export const adjacentEnemies = (units: Unit[], unit: Unit): Unit[] => units.filter((u) => u.side !== unit.side && neighbors(unit).some((p) => p.x === u.x && p.y === u.y));
 export const attackableTargets = (units: Unit[], unit: Unit): Unit[] => {
@@ -34,12 +34,16 @@ export const attackUnit = (state: PlayState, attackerId: string, targetId: strin
   const attacker = state.stage.units.find((u) => u.id === attackerId);
   const target = state.stage.units.find((u) => u.id === targetId);
   if (!attacker || !target || !attackableTargets(state.stage.units, attacker).some((u) => u.id === targetId) || attacker.acted) return null;
-  const attack = calculateAttackDamage(attacker, target, skillMultiplier);
-  target.hp -= attack.damage;
+  const attack = damageUnit(state, attacker, target, skillMultiplier);
   const labels: Record<AttackDirection, string> = { front: '正面', side: '側面', back: '背後' };
   state.message = `${labels[attack.direction]}攻撃！ ${attack.damage}ダメージ。`;
-  state.stage.units = state.stage.units.filter((u) => u.hp > 0);
   attacker.acted = true;
+  return attack;
+};
+export const damageUnit = (state: PlayState, attacker: Unit, target: Unit, multiplier: number): AttackDamage => {
+  const attack = calculateAttackDamage(attacker, target, multiplier);
+  target.hp -= attack.damage;
+  state.stage.units = state.stage.units.filter((unit) => unit.hp > 0);
   updateResult(state);
   return attack;
 };

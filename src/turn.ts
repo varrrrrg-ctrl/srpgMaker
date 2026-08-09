@@ -35,9 +35,10 @@ export const startRound = (state: PlayState, round = state.round): Unit | undefi
   state.round = round;
   state.stage.units.forEach((unit) => {
     unit.acted = false;
-    if (round > 1 && unit.side === 'ally' && unit.hp > 0) {
+    if (round > 1 && unit.hp > 0) {
       unit.currentMp = Math.min(unit.currentMp + 10, unit.maxMp);
       unit.guarding = false;
+      unit.protected = false;
     }
   });
   state.actionOrder = buildActionOrder(state.stage.units);

@@ -9,12 +9,16 @@ export const parseStage = (text: string): StageData => {
       data.units.forEach((unit) => {
         if (!Number.isFinite(unit.speed)) unit.speed = DEFAULT_SPEED;
         if (!Number.isFinite(unit.defense)) unit.defense = DEFAULT_DEFENSE;
-        const preset = unit.name && unit.name in PLAYER_PRESETS ? PLAYER_PRESETS[unit.name as PlayerPresetName] : undefined;
+        const unitType = unit.unitType && unit.unitType in PLAYER_PRESETS ? unit.unitType : (unit.name && unit.name in PLAYER_PRESETS ? unit.name : 'Balance');
+        unit.unitType = unitType as PlayerPresetName;
+        const preset = PLAYER_PRESETS[unit.unitType];
         if (!Number.isFinite(unit.maxMp)) unit.maxMp = preset?.maxMp ?? DEFAULT_MAX_MP;
         if (!Number.isFinite(unit.currentMp)) unit.currentMp = preset?.currentMp ?? DEFAULT_CURRENT_MP;
         unit.currentMp = Math.max(0, Math.min(unit.currentMp, unit.maxMp));
         if (typeof unit.guarding !== 'boolean') unit.guarding = false;
-        if (!unit.skillId && preset) unit.skillId = preset.skillId;
+        if (typeof unit.protected !== 'boolean') unit.protected = false;
+        if (!Array.isArray(unit.skillIds)) unit.skillIds = [...preset.skillIds];
+        if (!unit.skillId) unit.skillId = unit.skillIds[0];
       });
       return data;
     }
