@@ -1,5 +1,6 @@
 import { MAP_HEIGHT, MAP_WIDTH, indexOf, type PlayState, type StageData, type Tool } from './types';
 import { areaPositions, SKILLS, selectableSkillTargets, skillRangePositions } from './skills';
+import { UNIT_TYPE_MARKERS } from './presentation';
 export const CELL = 36;
 export const CANVAS_WIDTH = CELL * MAP_WIDTH;
 export const CANVAS_HEIGHT = CELL * MAP_HEIGHT;
@@ -26,7 +27,8 @@ export const draw = (ctx: CanvasRenderingContext2D, stage: StageData, play: Play
     ctx.beginPath(); ctx.arc(u.x * CELL + CELL / 2, u.y * CELL + CELL / 2, 12, 0, Math.PI * 2); ctx.fill();
     if (u.acted) { ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.fillRect(u.x * CELL + 6, u.y * CELL + 6, CELL - 12, CELL - 12); }
     ctx.fillStyle = '#fff'; ctx.font = '11px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(String(u.hp), u.x * CELL + CELL / 2, u.y * CELL + CELL / 2 + 4);
-    if (!play) { ctx.fillStyle = '#172017'; ctx.font = '8px sans-serif'; ctx.fillText(u.unitType.slice(0, 3), u.x * CELL + CELL / 2, u.y * CELL + CELL - 2); }
+    ctx.fillStyle = '#fff'; ctx.strokeStyle = '#172017'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(u.x * CELL + CELL - 7, u.y * CELL + CELL - 7, 7, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#172017'; ctx.font = 'bold 10px sans-serif'; ctx.fillText(UNIT_TYPE_MARKERS[u.unitType], u.x * CELL + CELL - 7, u.y * CELL + CELL - 3);
     const arrows = { up: '↑', down: '↓', left: '←', right: '→' } as const;
     ctx.fillStyle = '#fff'; ctx.font = 'bold 15px sans-serif'; ctx.fillText(arrows[u.direction], u.x * CELL + CELL / 2, u.y * CELL + CELL / 2 - 10);
   }

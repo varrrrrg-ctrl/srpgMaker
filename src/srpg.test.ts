@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { chooseEnemyAction, runEnemyAction } from './ai';
 import { applyDirectionalModifier, attackableTargets, attackUnit, calculateAttackDamage, calculateBaseDamage, directionalAttackModifier, updateResult } from './combat';
 import { AutoMover, autoMovePath, changeDirection, directionFromFlick, isTapGesture, movementMap, movementStep, pathCost, reachablePositions, shortestPath, startAutoMove } from './movement';
+import { factionLabel, skillDetails, UNIT_TYPE_MARKERS } from './presentation';
 import { parseStage, stageToJson } from './storage';
 import { areaPositions, selectableSkillTargets, skillRangePositions, SKILLS, useUnitSkill } from './skills';
 import { buildActionOrder, currentUnit, finishCurrentAction, startRound } from './turn';
@@ -393,5 +394,37 @@ describe('typed stage placement and compatibility', () => {
     const stage = createStage(); placePresetUnit(stage, 'enemy', 'Tank', { x: 4, y: 5 }); stage.units[0].direction = 'left'; const loaded = parseStage(stageToJson(stage)); expect([loaded.units[0].side, loaded.units[0].unitType, loaded.units[0].x, loaded.units[0].y, loaded.units[0].direction]).toEqual(['enemy', 'Tank', 4, 5, 'left']);
     const old = { ...defaultUnit('enemy', 1, 1) } as Partial<ReturnType<typeof defaultUnit>>; delete old.unitType; delete old.skillIds;
     const migrated = parseStage(JSON.stringify({ version: 1, terrain: createStage().terrain, units: [old] })); expect(migrated.units[0].unitType).toBe('Balance'); expect(migrated.units[0].skillIds).toEqual(['power-slash', 'shock-wave']);
+  });
+});
+
+describe('skill and unit presentation', () => {
+  it('全スキルの説明に名前・MP・射程・範囲・威力・特殊効果を表示できる', () => {
+    const expected = {
+      'power-slash': ['Power Slash', '20', '1', '単体', '×1.5', '隣接する敵1体'],
+      'shock-wave': ['Shock Wave', '30', '直線2', '単体', '×1.4', '衝撃波'],
+      'heavy-break': ['Heavy Break', '30', '1', '単体', '×1.8', '高威力'],
+      execution: ['Execution', '40', '1', '単体', '×2.2', '大量のMP'],
+      'shield-bash': ['Shield Bash', '20', '1', '単体', '×1.3', '押し出す'],
+      'ground-slam': ['Ground Slam', '30', '自分中心', '上下左右1マス', '×1.1', '周囲'],
+      rush: ['Rush', '20', '1', '単体', '×1.4', '素早い攻撃'],
+      'dash-strike': ['Dash Strike', '30', '2', '単体', '×1.5', '接近'],
+      guard: ['Guard', '20', '自分', '自分', undefined, '40%軽減'],
+      protect: ['Protect', '30', '1', '味方単体', undefined, '30%軽減'],
+    } as const;
+    for (const [id, values] of Object.entries(expected) as Array<[keyof typeof expected, typeof expected[keyof typeof expected]]>) {
+      const details = skillDetails(SKILLS[id], 50);
+      expect([details.name, details.mp, details.range, details.area, details.power]).toEqual(values.slice(0, 5)); expect(details.description).toContain(values[5]);
+    }
+  });
+  it('MP不足でも説明と不足理由を確認でき、表示・キャンセルだけではMPを消費しない', () => {
+    const unit = presetUnit('ally', 'Attacker', 1, 1); unit.currentMp = 20; const before = unit.currentMp;
+    const details = skillDetails(SKILLS['heavy-break'], unit.currentMp); expect(details.currentMp).toBe('20'); expect(details.unavailable).toBe('MP不足'); expect(details.description).toContain('高威力');
+    const state = play(); state.stage.units.push(unit); state.selectedSkillId = 'heavy-break'; state.phase = 'skill'; state.selectedSkillId = undefined; state.phase = 'move'; expect(unit.currentMp).toBe(before);
+  });
+  it('5タイプのマーカーは一意で、陣営色とは別のB/A/T/S/Dとして保存後も維持される', () => {
+    expect(UNIT_TYPE_MARKERS).toEqual({ Balance: 'B', Attacker: 'A', Tank: 'T', Assault: 'S', Defender: 'D' });
+    expect(new Set(Object.values(UNIT_TYPE_MARKERS)).size).toBe(5); expect([factionLabel('ally'), factionLabel('enemy')]).toEqual(['Friendly', 'Enemy']);
+    const stage = createStage(); for (const [index, type] of (Object.keys(UNIT_TYPE_MARKERS) as Array<keyof typeof UNIT_TYPE_MARKERS>).entries()) placePresetUnit(stage, index % 2 ? 'enemy' : 'ally', type, { x: index, y: 0 });
+    const loaded = parseStage(stageToJson(stage)); expect(loaded.units.map((unit) => UNIT_TYPE_MARKERS[unit.unitType])).toEqual(['B', 'A', 'T', 'S', 'D']); expect(loaded.units.map((unit) => factionLabel(unit.side))).toEqual(['Friendly', 'Enemy', 'Friendly', 'Enemy', 'Friendly']);
   });
 });

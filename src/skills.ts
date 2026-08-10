@@ -5,19 +5,19 @@ import { inBounds, indexOf, neighbors, type PlayState, type Position, type Skill
 export type SkillEffect = 'damage' | 'knockback' | 'guard' | 'protect' | 'dash';
 export type SkillTarget = 'enemy' | 'ally' | 'self';
 export type RangeType = 'diamond' | 'line';
-export interface SkillDefinition { id: SkillId; name: string; mpCost: number; damageMultiplier: number; range: number; area: number; rangeType: RangeType; targetType: SkillTarget; effect: SkillEffect }
+export interface SkillDefinition { id: SkillId; name: string; description: string; mpCost: number; damageMultiplier: number; range: number; area: number; rangeType: RangeType; targetType: SkillTarget; effect: SkillEffect }
 
 export const SKILLS: Record<SkillId, SkillDefinition> = {
-  'power-slash': { id: 'power-slash', name: 'Power Slash', mpCost: 20, damageMultiplier: 1.5, range: 1, area: 0, rangeType: 'diamond', targetType: 'enemy', effect: 'damage' },
-  'shock-wave': { id: 'shock-wave', name: 'Shock Wave', mpCost: 30, damageMultiplier: 1.4, range: 2, area: 0, rangeType: 'line', targetType: 'enemy', effect: 'damage' },
-  'heavy-break': { id: 'heavy-break', name: 'Heavy Break', mpCost: 30, damageMultiplier: 1.8, range: 1, area: 0, rangeType: 'diamond', targetType: 'enemy', effect: 'damage' },
-  execution: { id: 'execution', name: 'Execution', mpCost: 40, damageMultiplier: 2.2, range: 1, area: 0, rangeType: 'diamond', targetType: 'enemy', effect: 'damage' },
-  'shield-bash': { id: 'shield-bash', name: 'Shield Bash', mpCost: 20, damageMultiplier: 1.3, range: 1, area: 0, rangeType: 'diamond', targetType: 'enemy', effect: 'knockback' },
-  'ground-slam': { id: 'ground-slam', name: 'Ground Slam', mpCost: 30, damageMultiplier: 1.1, range: 0, area: 1, rangeType: 'diamond', targetType: 'enemy', effect: 'damage' },
-  rush: { id: 'rush', name: 'Rush', mpCost: 20, damageMultiplier: 1.4, range: 1, area: 0, rangeType: 'diamond', targetType: 'enemy', effect: 'damage' },
-  'dash-strike': { id: 'dash-strike', name: 'Dash Strike', mpCost: 30, damageMultiplier: 1.5, range: 2, area: 0, rangeType: 'diamond', targetType: 'enemy', effect: 'dash' },
-  guard: { id: 'guard', name: 'Guard', mpCost: 20, damageMultiplier: 0, range: 0, area: 0, rangeType: 'diamond', targetType: 'self', effect: 'guard' },
-  protect: { id: 'protect', name: 'Protect', mpCost: 30, damageMultiplier: 0, range: 1, area: 0, rangeType: 'diamond', targetType: 'ally', effect: 'protect' },
+  'power-slash': { id: 'power-slash', name: 'Power Slash', description: '隣接する敵1体へ強力な攻撃を行う。', mpCost: 20, damageMultiplier: 1.5, range: 1, area: 0, rangeType: 'diamond', targetType: 'enemy', effect: 'damage' },
+  'shock-wave': { id: 'shock-wave', name: 'Shock Wave', description: '上下左右の直線2マス以内にいる敵へ衝撃波を放つ。', mpCost: 30, damageMultiplier: 1.4, range: 2, area: 0, rangeType: 'line', targetType: 'enemy', effect: 'damage' },
+  'heavy-break': { id: 'heavy-break', name: 'Heavy Break', description: '高威力の一撃を与える。', mpCost: 30, damageMultiplier: 1.8, range: 1, area: 0, rangeType: 'diamond', targetType: 'enemy', effect: 'damage' },
+  execution: { id: 'execution', name: 'Execution', description: '大量のMPを消費して強烈な一撃を与える。', mpCost: 40, damageMultiplier: 2.2, range: 1, area: 0, rangeType: 'diamond', targetType: 'enemy', effect: 'damage' },
+  'shield-bash': { id: 'shield-bash', name: 'Shield Bash', description: '敵を攻撃し、可能なら1マス後方へ押し出す。', mpCost: 20, damageMultiplier: 1.3, range: 1, area: 0, rangeType: 'diamond', targetType: 'enemy', effect: 'knockback' },
+  'ground-slam': { id: 'ground-slam', name: 'Ground Slam', description: '自分の周囲にいるすべての敵を攻撃する。', mpCost: 30, damageMultiplier: 1.1, range: 0, area: 1, rangeType: 'diamond', targetType: 'enemy', effect: 'damage' },
+  rush: { id: 'rush', name: 'Rush', description: '素早い攻撃で敵1体へダメージを与える。', mpCost: 20, damageMultiplier: 1.4, range: 1, area: 0, rangeType: 'diamond', targetType: 'enemy', effect: 'damage' },
+  'dash-strike': { id: 'dash-strike', name: 'Dash Strike', description: '2マス以内の敵へ接近し、そのまま攻撃する。', mpCost: 30, damageMultiplier: 1.5, range: 2, area: 0, rangeType: 'diamond', targetType: 'enemy', effect: 'dash' },
+  guard: { id: 'guard', name: 'Guard', description: '次の自分ターン開始まで受ける最終ダメージを40%軽減する。', mpCost: 20, damageMultiplier: 0, range: 0, area: 0, rangeType: 'diamond', targetType: 'self', effect: 'guard' },
+  protect: { id: 'protect', name: 'Protect', description: '隣接する味方1体が次のプレイヤーターン開始まで受ける最終ダメージを30%軽減する。', mpCost: 30, damageMultiplier: 0, range: 1, area: 0, rangeType: 'diamond', targetType: 'ally', effect: 'protect' },
 };
 
 const same = (a: Position, b: Position): boolean => a.x === b.x && a.y === b.y;
