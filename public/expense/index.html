@@ -1,0 +1,417 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no" />
+  <meta name="theme-color" content="#111111" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="支出メモ" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="./icon-192.png" />
+  <title>支出メモ</title>
+  <style>
+    :root {
+      --bg:#f5f5f7;
+      --card:#ffffff;
+      --text:#111111;
+      --muted:#777777;
+      --line:#e7e7ea;
+      --accent:#111111;
+      --danger:#c62828;
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+    }
+    * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+    html,body { margin:0; background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    body { min-height:100dvh; }
+    button,input { font:inherit; }
+
+    .app {
+      max-width:520px;
+      margin:0 auto;
+      min-height:100dvh;
+      padding:calc(14px + var(--safe-top)) 14px calc(18px + var(--safe-bottom));
+    }
+
+    .topbar {
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      margin-bottom:12px;
+    }
+    .title { font-size:18px; font-weight:800; letter-spacing:-0.02em; }
+    .ghost {
+      border:0; background:transparent; padding:9px 4px; color:#555; font-weight:700;
+    }
+
+    .card {
+      background:var(--card);
+      border-radius:22px;
+      box-shadow:0 1px 8px rgba(0,0,0,.04);
+      overflow:hidden;
+    }
+
+    .amount-wrap {
+      padding:22px 18px 10px;
+      text-align:center;
+    }
+    .amount-label {
+      font-size:12px; color:var(--muted); font-weight:700; margin-bottom:4px;
+    }
+    .amount {
+      width:100%;
+      border:0;
+      outline:0;
+      background:transparent;
+      text-align:center;
+      font-size:52px;
+      font-weight:850;
+      letter-spacing:-0.05em;
+      padding:4px 0 2px;
+      color:var(--text);
+      caret-color:transparent;
+    }
+    .hint {
+      font-size:12px; color:var(--muted); min-height:18px;
+    }
+
+    .cats {
+      display:grid;
+      grid-template-columns:repeat(3,1fr);
+      gap:9px;
+      padding:14px;
+    }
+    .cat {
+      min-height:72px;
+      border:0;
+      border-radius:17px;
+      background:#f1f1f3;
+      font-weight:800;
+      font-size:15px;
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      justify-content:center;
+      gap:5px;
+      touch-action:manipulation;
+    }
+    .cat:active { transform:scale(.97); }
+    .emoji { font-size:23px; }
+
+    .summary {
+      display:flex;
+      justify-content:space-between;
+      gap:10px;
+      margin:14px 2px 8px;
+      align-items:end;
+    }
+    .summary .kicker { color:var(--muted); font-size:12px; font-weight:700; }
+    .summary .sum { font-size:24px; font-weight:850; letter-spacing:-0.03em; }
+
+    .history {
+      background:var(--card);
+      border-radius:18px;
+      overflow:hidden;
+    }
+    .row {
+      display:grid;
+      grid-template-columns:1fr auto auto;
+      gap:10px;
+      align-items:center;
+      padding:13px 14px;
+      border-bottom:1px solid var(--line);
+    }
+    .row:last-child { border-bottom:0; }
+    .row-main { min-width:0; }
+    .row-cat { font-size:14px; font-weight:800; }
+    .row-time { font-size:11px; color:var(--muted); margin-top:3px; }
+    .row-amt { font-size:17px; font-weight:850; }
+    .del {
+      border:0; background:transparent; color:#aaa;
+      padding:8px 2px 8px 8px; font-size:18px;
+    }
+    .empty {
+      padding:24px 14px;
+      text-align:center;
+      color:var(--muted);
+      font-size:13px;
+    }
+
+    .footer-actions {
+      display:flex;
+      gap:8px;
+      margin-top:12px;
+    }
+    .action {
+      flex:1;
+      border:0;
+      background:#e9e9ec;
+      border-radius:14px;
+      padding:12px 10px;
+      font-weight:800;
+      font-size:13px;
+    }
+    .danger { color:var(--danger); }
+
+    .toast {
+      position:fixed;
+      left:50%;
+      bottom:calc(28px + var(--safe-bottom));
+      transform:translate(-50%,16px);
+      background:#111;
+      color:#fff;
+      padding:12px 16px;
+      border-radius:999px;
+      font-weight:800;
+      font-size:14px;
+      opacity:0;
+      pointer-events:none;
+      transition:.18s ease;
+      z-index:20;
+      white-space:nowrap;
+    }
+    .toast.show { opacity:1; transform:translate(-50%,0); }
+
+    .keypad {
+      display:grid;
+      grid-template-columns:repeat(3,1fr);
+      gap:8px;
+      padding:0 14px 14px;
+    }
+    .key {
+      border:0; border-radius:14px; min-height:52px;
+      background:#fafafa; font-weight:800; font-size:20px;
+    }
+    .key.small { font-size:16px; color:#666; }
+
+    @media (min-height: 800px) {
+      .cat { min-height:78px; }
+      .key { min-height:56px; }
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <div class="title">支出メモ</div>
+    <button class="ghost" id="todayBtn">今日</button>
+  </div>
+
+  <section class="card">
+    <div class="amount-wrap">
+      <div class="amount-label">金額</div>
+      <input id="amount" class="amount" value="¥0" inputmode="none" readonly aria-label="金額" />
+      <div id="hint" class="hint">金額を入れて、カテゴリをタップ</div>
+    </div>
+
+    <div class="keypad" aria-label="数字入力">
+      <button class="key" data-key="1">1</button>
+      <button class="key" data-key="2">2</button>
+      <button class="key" data-key="3">3</button>
+      <button class="key" data-key="4">4</button>
+      <button class="key" data-key="5">5</button>
+      <button class="key" data-key="6">6</button>
+      <button class="key" data-key="7">7</button>
+      <button class="key" data-key="8">8</button>
+      <button class="key" data-key="9">9</button>
+      <button class="key small" data-key="00">00</button>
+      <button class="key" data-key="0">0</button>
+      <button class="key small" data-key="back">⌫</button>
+    </div>
+
+    <div class="cats">
+      <button class="cat" data-cat="食費"><span class="emoji">🍚</span>食費</button>
+      <button class="cat" data-cat="日用品"><span class="emoji">🧻</span>日用品</button>
+      <button class="cat" data-cat="交通"><span class="emoji">🚃</span>交通</button>
+      <button class="cat" data-cat="娯楽"><span class="emoji">🎮</span>娯楽</button>
+      <button class="cat" data-cat="生活"><span class="emoji">🏠</span>生活</button>
+      <button class="cat" data-cat="その他"><span class="emoji">…</span>その他</button>
+    </div>
+  </section>
+
+  <div class="summary">
+    <div>
+      <div class="kicker">今日の合計</div>
+      <div class="sum" id="todaySum">¥0</div>
+    </div>
+    <div class="kicker" id="countText">0件</div>
+  </div>
+
+  <section class="history" id="history"></section>
+
+  <div class="footer-actions">
+    <button class="action" id="csvBtn">CSV出力</button>
+    <button class="action danger" id="clearBtn">全削除</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(() => {
+  const KEY = "simple-expense-v1";
+  const amountEl = document.getElementById("amount");
+  const historyEl = document.getElementById("history");
+  const todaySumEl = document.getElementById("todaySum");
+  const countText = document.getElementById("countText");
+  const toastEl = document.getElementById("toast");
+  const hintEl = document.getElementById("hint");
+  let digits = "";
+
+  const fmt = n => "¥" + Number(n).toLocaleString("ja-JP");
+  const pad = n => String(n).padStart(2,"0");
+  const localDateKey = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+
+  function load() {
+    try { return JSON.parse(localStorage.getItem(KEY) || "[]"); }
+    catch { return []; }
+  }
+
+  function save(items) {
+    localStorage.setItem(KEY, JSON.stringify(items));
+  }
+
+  function updateAmount() {
+    const n = digits ? Number(digits) : 0;
+    amountEl.value = fmt(n);
+  }
+
+  function toast(text) {
+    toastEl.textContent = text;
+    toastEl.classList.add("show");
+    clearTimeout(toast._t);
+    toast._t = setTimeout(() => toastEl.classList.remove("show"), 950);
+  }
+
+  function addExpense(category) {
+    const amount = Number(digits || 0);
+    if (!amount) {
+      toast("先に金額を入力");
+      return;
+    }
+    const items = load();
+    items.unshift({
+      id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random(),
+      amount,
+      category,
+      createdAt: new Date().toISOString()
+    });
+    save(items);
+    digits = "";
+    updateAmount();
+    render();
+    toast(`${fmt(amount)}  ${category}`);
+    if (navigator.vibrate) navigator.vibrate(18);
+  }
+
+  function removeItem(id) {
+    const items = load().filter(x => x.id !== id);
+    save(items);
+    render();
+  }
+
+  function render() {
+    const items = load();
+    const todayKey = localDateKey(new Date());
+    const todayItems = items.filter(x => localDateKey(new Date(x.createdAt)) === todayKey);
+    const sum = todayItems.reduce((a,b) => a + Number(b.amount || 0), 0);
+    todaySumEl.textContent = fmt(sum);
+    countText.textContent = `${todayItems.length}件`;
+
+    if (!items.length) {
+      historyEl.innerHTML = '<div class="empty">まだ記録はありません</div>';
+      return;
+    }
+
+    historyEl.innerHTML = items.slice(0,30).map(x => {
+      const d = new Date(x.createdAt);
+      const time = `${d.getMonth()+1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+      return `
+        <div class="row">
+          <div class="row-main">
+            <div class="row-cat">${escapeHtml(x.category)}</div>
+            <div class="row-time">${time}</div>
+          </div>
+          <div class="row-amt">${fmt(x.amount)}</div>
+          <button class="del" data-del="${x.id}" aria-label="削除">×</button>
+        </div>`;
+    }).join("");
+
+    historyEl.querySelectorAll("[data-del]").forEach(btn => {
+      btn.addEventListener("click", () => removeItem(btn.dataset.del));
+    });
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({
+      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
+    }[c]));
+  }
+
+  document.querySelectorAll("[data-key]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const k = btn.dataset.key;
+      if (k === "back") digits = digits.slice(0,-1);
+      else if (digits.length < 9) {
+        if (!digits && k === "00") return;
+        if (!digits && k === "0") return;
+        digits += k;
+      }
+      updateAmount();
+    });
+  });
+
+  document.querySelectorAll("[data-cat]").forEach(btn => {
+    btn.addEventListener("click", () => addExpense(btn.dataset.cat));
+  });
+
+  document.getElementById("todayBtn").addEventListener("click", () => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  });
+
+  document.getElementById("clearBtn").addEventListener("click", () => {
+    const items = load();
+    if (!items.length) return;
+    if (confirm("記録をすべて削除しますか？")) {
+      save([]);
+      render();
+      toast("削除しました");
+    }
+  });
+
+  document.getElementById("csvBtn").addEventListener("click", () => {
+    const items = load();
+    if (!items.length) {
+      toast("出力する記録がありません");
+      return;
+    }
+    const lines = [["日時","金額","カテゴリ"]];
+    items.slice().reverse().forEach(x => {
+      const d = new Date(x.createdAt);
+      lines.push([
+        `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`,
+        x.amount,
+        x.category
+      ]);
+    });
+    const csv = "\uFEFF" + lines.map(row => row.map(v => `"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
+    const blob = new Blob([csv], {type:"text/csv;charset=utf-8"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `expenses_${localDateKey(new Date())}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js").catch(() => {}));
+  }
+
+  updateAmount();
+  render();
+})();
+</script>
+</body>
+</html>
